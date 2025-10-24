@@ -1,6 +1,6 @@
 # OmniShopAgent
-```
-mermaid
+
+```mermaid
 graph TD
     %% --- 1. Core Components ---
     subgraph UserInput
