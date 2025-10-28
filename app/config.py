@@ -1,0 +1,68 @@
+"""
+Configuration management for OmniShopAgent
+Loads environment variables and provides configuration objects
+"""
+
+import os
+from typing import Optional
+
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables"""
+
+    # OpenAI Configuration
+    openai_api_key: str
+    openai_model: str = "gpt-4o-mini"
+    openai_embedding_model: str = "text-embedding-3-small"
+
+    # MongoDB Configuration
+    mongo_uri: str = "mongodb://localhost:27017"
+    mongo_db_name: str = "omnishop"
+    mongo_collection_name: str = "products"
+
+    # Redis Configuration
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+    redis_db: int = 0
+    redis_password: Optional[str] = None
+    session_ttl: int = 3600
+
+    # Milvus Configuration
+    milvus_uri: str = "./data/milvus_lite.db"
+    text_collection_name: str = "text_embeddings"
+    image_collection_name: str = "image_embeddings"
+    text_dim: int = 1536
+    image_dim: int = 512
+
+    # Search Configuration
+    top_k_results: int = 10
+    similarity_threshold: float = 0.6
+
+    # Application Configuration
+    app_host: str = "0.0.0.0"
+    app_port: int = 8000
+    debug: bool = True
+    log_level: str = "INFO"
+
+    # Data Paths
+    raw_data_path: str = "./data/raw"
+    processed_data_path: str = "./data/processed"
+    image_data_path: str = "./data/images"
+
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = False
+
+
+# Global settings instance
+settings = Settings()
+
+
+# Helper function to get absolute paths
+def get_absolute_path(relative_path: str) -> str:
+    """Convert relative path to absolute path"""
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_dir, relative_path)

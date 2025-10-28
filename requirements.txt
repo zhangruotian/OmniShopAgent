@@ -1,0 +1,38 @@
+# Core Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.6.0
+pydantic-settings>=2.1.0
+
+# LLM & LangChain
+langchain>=0.1.9
+langchain-openai>=0.0.5
+openai>=1.12.0
+
+# Embeddings & Vision
+clip-client>=3.5.0  # CLIP-as-Service client
+Pillow>=10.2.0  # Image processing
+
+# Vector Database
+pymilvus>=2.3.6
+
+# Databases
+pymongo>=4.6.1
+redis>=5.0.1
+
+# Utilities
+python-dotenv>=1.0.1
+python-multipart>=0.0.9
+aiofiles>=23.2.1
+requests>=2.31.0
+
+# Data Processing
+pandas>=2.2.3
+numpy>=1.26.4
+tqdm>=4.66.1
+
+# Development & Testing
+pytest>=8.0.0
+pytest-asyncio>=0.23.4
+httpx>=0.26.0
+black>=24.1.1
