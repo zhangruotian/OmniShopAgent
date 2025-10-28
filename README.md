@@ -242,82 +242,139 @@ Maintains context across turns for natural multi-turn conversations.
 ## Installation
 
 **Prerequisites:**
-- Python 3.10+
+- Python 3.11+
 - OpenAI API Key
-- Kaggle API Token (for dataset download)
-- Redis and MongoDB (local or Docker)
+- MongoDB (local or Docker)
+- CLIP Server (for image embeddings)
 
-**Setup:**
+**Quick Start:**
+
+See **[QUICKSTART.md](QUICKSTART.md)** for a 5-minute setup guide.
+
+**Detailed Setup:**
+
+1. **Clone and install dependencies**
 ```bash
-# Clone and install dependencies
-git clone https://github.com/yourusername/OmniShopAgent.git
 cd OmniShopAgent
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # macOS/Linux
 pip install -r requirements.txt
+```
 
-# Install local services
-brew install redis mongodb-community
+2. **Configure environment**
+Create a `.env` file with your configuration:
+```bash
+# Required
+OPENAI_API_KEY=your_api_key_here
 
-# Configure environment
-cp .env.example .env
-# Add OPENAI_API_KEY to .env
+# MongoDB
+MONGO_URI=mongodb://localhost:27017
 
-# Download and prepare dataset
-kaggle datasets download -d paramaggarwal/fashion-product-images-dataset
-unzip fashion-product-images-dataset.zip -d data/
-python scripts/prepare_data.py
-python scripts/load_embeddings.py
+# Milvus (uses embedded Milvus Lite by default)
+MILVUS_URI=./data/milvus_lite.db
 
-# Start services
-redis-server &
-brew services start mongodb-community
+# See SETUP.md for all configuration options
+```
 
-# Run application
-uvicorn app.main:app --reload
+3. **Start required services**
+```bash
+# MongoDB
+brew services start mongodb-community  # macOS
+# or
+docker run -d -p 27017:27017 --name mongodb mongo:latest
+
+# CLIP Server (in a separate terminal)
+cd ~/Documents/clip
+python -m clip_server torch-flow.yml
+```
+
+4. **Import data and create indexes**
+```bash
+# Import product data to MongoDB
+python scripts/import_to_mongodb.py --clear
+
+# Generate and store embeddings
+python scripts/index_data.py --mode both
+
+# Test all services
+python scripts/test_services.py
 ```
 
 **Quick Test:**
-```bash
-curl -X POST http://localhost:8000/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{"session_id": "test-123", "message": "Find me a blue casual shirt"}'
+```python
+from app.services import get_mongodb_service, get_embedding_service, get_milvus_service
+
+# Test the services
+mongo = get_mongodb_service()
+print(f"Products: {mongo.count_products()}")
+
+embed = get_embedding_service()
+emb = embed.get_text_embedding("blue jeans")
+print(f"Embedding dimension: {len(emb)}")
+
+milvus = get_milvus_service()
+stats = milvus.get_collection_stats("text_embeddings")
+print(f"Text embeddings: {stats['row_count']}")
 ```
+
+## Documentation
+
+- **[QUICKSTART.md](QUICKSTART.md)** - 5-minute setup guide
+- **[SETUP.md](SETUP.md)** - Detailed setup instructions
+- **[docs/SERVICES.md](docs/SERVICES.md)** - Service layer documentation
 
 ## Project Structure
 
 ```
 OmniShopAgent/
 ├── app/
-│   ├── main.py                 # FastAPI entry point
+│   ├── config.py              # Configuration management
 │   ├── api/
-│   │   ├── routes.py          # API endpoints
-│   │   └── models.py          # Request/response models
+│   │   └── __init__.py        # API endpoints (coming soon)
 │   ├── agents/
-│   │   ├── router.py          # LangChain agent router
-│   │   ├── intent_classifier.py  # Intent classification (Flow 0)
-│   │   ├── tools.py           # Tool definitions
-│   │   └── flows.py           # Flow implementations
-│   ├── services/
-│   │   ├── milvus_service.py  # Vector database
-│   │   ├── mongo_service.py   # Metadata store
-│   │   ├── redis_service.py   # Session management
-│   │   ├── embedding.py       # Embeddings (text/image)
-│   │   └── llm.py             # LLM client
-│   └── config.py
+│   │   └── __init__.py        # Agent implementations (coming soon)
+│   └── services/              # ✅ Service layer (completed)
+│       ├── __init__.py        # Service exports
+│       ├── mongodb_service.py # Product metadata storage
+│       ├── embedding_service.py # Text & image embeddings (OpenAI + CLIP)
+│       └── milvus_service.py  # Vector storage & similarity search
 ├── scripts/
-│   ├── prepare_data.py        # Data preprocessing
-│   ├── load_embeddings.py     # Embedding generation
-│   └── test_flows.py          # Flow testing
+│   ├── download_dataset.py    # Download fashion dataset
+│   ├── import_to_mongodb.py   # ✅ Import data to MongoDB
+│   ├── index_data.py          # ✅ Generate and store embeddings
+│   └── test_services.py       # ✅ Test all services
 ├── data/
-│   ├── raw/
-│   ├── processed/
-│   └── images/
+│   ├── styles.csv             # Product metadata
+│   ├── images.csv             # Image URLs
+│   ├── images/                # Product images (~44k)
+│   └── milvus_lite.db         # Embedded vector database
+├── docs/
+│   └── SERVICES.md            # Service layer documentation
 ├── tests/
 ├── requirements.txt
-├── .env.example
+├── QUICKSTART.md              # 5-minute setup guide
+├── SETUP.md                   # Detailed setup instructions
 └── README.md
 ```
+
+## Current Status
+
+### ✅ Completed
+- **Service Layer**: MongoDB, Embedding (OpenAI + CLIP), and Milvus services
+- **Data Pipeline**: Import scripts and indexing tools
+- **Testing**: Comprehensive service tests
+
+### 🚧 In Progress
+- **LangChain Tools**: Product search tools
+- **Agent Layer**: Conversational agent with ReAct pattern
+- **API Layer**: FastAPI endpoints
+- **UI Layer**: User interface
+
+### 📋 Next Steps
+1. Develop LangChain tools for product search
+2. Implement agent with tool orchestration
+3. Build FastAPI application
+4. Create user interface
 
 ## License
 

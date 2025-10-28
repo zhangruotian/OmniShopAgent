@@ -35,6 +35,7 @@ ENV/
 # IDEs
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *~
@@ -54,9 +55,13 @@ data/**
 *.sqlite3
 data/milvus_lite.db
 
+# Docker volumes
+volumes/
+
 # Logs
 *.log
 logs/
+nohup.out
 
 # Testing
 .pytest_cache/
