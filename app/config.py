@@ -10,17 +10,20 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables"""
+    """Application settings loaded from environment variables
+    
+    All settings can be configured via .env file or environment variables.
+    """
 
     # OpenAI Configuration
     openai_api_key: str
     openai_model: str = "gpt-4o-mini"
     openai_embedding_model: str = "text-embedding-3-small"
+    openai_temperature: float = 0.7
+    openai_max_tokens: int = 1000
 
-    # MongoDB Configuration
-    mongo_uri: str = "mongodb://localhost:27017"
-    mongo_db_name: str = "omnishop"
-    mongo_collection_name: str = "products"
+    # CLIP Server Configuration
+    clip_server_url: str = "grpc://localhost:51000"
 
     # Redis Configuration
     redis_host: str = "localhost"
@@ -31,6 +34,8 @@ class Settings(BaseSettings):
 
     # Milvus Configuration
     milvus_uri: str = "./data/milvus_lite.db"
+    milvus_host: str = "localhost"
+    milvus_port: int = 19530
     text_collection_name: str = "text_embeddings"
     image_collection_name: str = "image_embeddings"
     text_dim: int = 1536

@@ -28,7 +28,7 @@ class EmbeddingService:
 
         Args:
             openai_api_key: OpenAI API key. If None, uses settings.openai_api_key
-            clip_server_url: CLIP server URL. If None, uses default grpc://localhost:51000
+            clip_server_url: CLIP server URL. If None, uses settings.clip_server_url
         """
         # Initialize OpenAI client for text embeddings
         self.openai_api_key = openai_api_key or settings.openai_api_key
@@ -36,7 +36,7 @@ class EmbeddingService:
         self.text_embedding_model = settings.openai_embedding_model
 
         # Initialize CLIP client for image embeddings
-        self.clip_server_url = clip_server_url or "grpc://localhost:51000"
+        self.clip_server_url = clip_server_url or settings.clip_server_url
         self.clip_client: Optional[ClipClient] = None
 
         logger.info("Embedding service initialized")
