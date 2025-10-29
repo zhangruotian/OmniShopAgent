@@ -21,11 +21,9 @@ OmniShopAgent combines Retrieval-Augmented Generation (RAG), multi-modal search,
 | **LLM** | GPT-4o-mini | Agent reasoning, VLM analysis, response generation |
 | **Text Embedding** | text-embedding-3-small| Product description vectorization |
 | **Image Embedding** | CLIP ViT-B/32 | Visual similarity search |
-| **Vector Database** | Milvus  | Efficient similarity search for text & image vectors |
-| **Metadata Store** | MongoDB | Product metadata |
-| **Session Store** | Redis | Conversation history and user context |
-| **Backend Framework** | FastAPI | RESTful API |
-| **Agent Framework** | LangChain | Tool orchestration and ReAct loop implementation |
+| **Vector Database** | Milvus Lite | Efficient similarity search for text & image vectors (embedded) |
+| **Frontend** | Streamlit | Interactive web interface |
+| **Agent Framework** | LangChain | Tool orchestration and flow routing |
 
 ## Dataset
 
@@ -57,9 +55,8 @@ graph TD
     end
 
     subgraph DataStores[Data Stores]
-        Milvus[("<b>Vector DB (Milvus Lite)</b><br/>- Image Embeddings (512-dim)<br/>- Text Embeddings (1536-dim)<br/>~44k products")]
-        Mongo[("<b>Metadata DB (MongoDB)</b><br/>- Product attributes<br/>- Price, color, category, etc.")]
-        History[("<b>Session DB (Redis)</b><br/>- Chat history per Session ID<br/>- Conversation context")] 
+        Milvus[("<b>Vector DB (Milvus)</b><br/>- Image Embeddings (512-dim)<br/>- Text Embeddings (1536-dim)<br/>~44k products")]
+        SessionStore[("<b>Session Store (Streamlit)</b><br/>- Chat history per session<br/>- Conversation context<br/>- In-memory state")] 
     end
 
     %% --- 2. Start Flow ---
@@ -70,7 +67,7 @@ graph TD
     BoundaryHandler --> API
     
     IntentCheck -- "Valid Search Query" --> Agent
-    History -- "Past Conversation<br/>(using Session ID as Key)" --> Agent 
+    SessionStore -- "Past Conversation<br/>(from Streamlit Session)" --> Agent 
     
     %% --- 3. Agent routes to different workflows ---
 
@@ -79,9 +76,7 @@ graph TD
         direction LR
         Agent -- "<b>Flow 1</b>" --> F1_Start(T3: Text Search)
         F1_Start -- "1. Query Vector" --> Milvus
-        Milvus -- "2. Return Top K 'noisy' IDs<br/>(incl. 'Red Cotton Shirt')" --> F1_GetMongo
-        F1_GetMongo["Get Metadata"] --> Mongo
-        Mongo -- "3. Return K 'noisy' Data Objects" --> F1_Augment
+        Milvus -- "2. Return Top K 'noisy' results<br/>(incl. 'Red Cotton Shirt')" --> F1_Augment
         F1_Augment["<b>Context Augmentation</b><br/>(Pass K results to LLM)"] --> F1_Generate
         F1_Generate["<b>Generation (Reasoning)</b><br/>LLM <b>reasons & filters</b> 'Red Shirt',<br/>then generates the answer"] --> API
     end
@@ -91,9 +86,7 @@ graph TD
         direction LR
         Agent -- "<b>Flow 2</b>" --> F2_Start(T2: Visual Search)
         F2_Start -- "1. Image Vector" --> Milvus
-        Milvus -- "2. Return Top K 'trusted' IDs" --> F2_GetMongo
-        F2_GetMongo["Get Metadata"] --> Mongo
-        Mongo -- "3. Return K 'trusted' Data Objects" --> F2_Augment
+        Milvus -- "2. Return Top K 'trusted' results" --> F2_Augment
         F2_Augment["<b>Context Augmentation</b><br/>(Pass K results to LLM)"] --> F2_Generate
         F2_Generate["<b>Generation (Presenting)</b><br/>LLM <b>presents</b> trusted results<br/>(no filtering needed)"] --> API
     end
@@ -103,9 +96,8 @@ graph TD
         direction LR
         Agent -- "<b>Flow 3</b>" --> F3_Start(T2: Visual Search)
         F3_Start -- "1. Image Vector" --> Milvus
-        Milvus -- "2. Return Top 100 IDs" --> F3_FilterMongo
-        F3_FilterMongo["<b>Database Filter (MongoDB)</b><br/>(Query: WHERE ID IN [...]<br/>AND color == 'blue')"] --> Mongo
-        Mongo -- "3. Return 3 'filtered' Data Objects" --> F3_Augment
+        Milvus -- "2. Return Top 100 results" --> F3_Filter["<b>Metadata Filter</b><br/>(Filter in Python:<br/>WHERE color == 'blue')"]
+        F3_Filter -- "3. Return filtered results" --> F3_Augment
         F3_Augment["<b>Context Augmentation</b><br/>(Pass 3 filtered results to LLM)"] --> F3_Generate
         F3_Generate["<b>Generation (Presenting)</b><br/>LLM formats the 3 results<br/>and generates the answer"] --> API
     end
@@ -134,14 +126,14 @@ graph TD
     
     %% --- 4. Final Response ---
     API -- "Final Answer" --> FinalResponse["User Response"]
-    API -- "Save conversation<br/>(using Session ID as Key)" --> History 
+    API -- "Save conversation<br/>(to Streamlit Session)" --> SessionStore 
 
     %% --- Style Definitions ---
     classDef default fill:#f9f9f9,stroke:#333,stroke-width:2px;
     class Agent fill:#e6f7ff,stroke:#0056b3,stroke-width:2px;
     class IntentCheck,BoundaryHandler fill:#fff0e6,stroke:#ff8c00,stroke-width:2px;
     class T1,T2,T3 fill:#fffbe6,stroke:#b8860b,stroke-width:2px;
-    class Milvus,Mongo,History fill:#e6ffe6,stroke:#006400,stroke-width:2px;
+    class Milvus,SessionStore fill:#e6ffe6,stroke:#006400,stroke-width:2px;
     class API,FinalResponse fill:#f0e6ff,stroke:#663399,stroke-width:2px;
     class F1_Generate,F4_RAGFlow,F5_RAGFlow fill:#ffebeb,stroke:b30000;
     class F2_Generate,F3_Generate fill:#ebfbee,stroke:006400;
@@ -151,151 +143,141 @@ graph TD
 ## Workflows
 
 ### Flow 0: Intent Classification & Boundary Handling
-The system performs intent classification before executing search flows to handle edge cases and guide users.
+Classifies user intent before search execution to handle edge cases:
+- **Out-of-Scope**: Non-fashion queries → Redirect to valid categories
+- **Too Vague**: Unclear requests → Ask for clarification
+- **Chitchat**: Greetings/casual talk → Engage and guide to shopping
+- **Specific Search**: Valid queries → Route to Flows 1-4
 
-**Handled Cases:**
-
-**1. Out-of-Scope Queries**
-- Query: *"I want to buy a phone"* or *"Recommend some furniture"*
-- Response: Politely explain focus on fashion products and suggest valid categories
-- Example: "I specialize in fashion products like clothing, shoes, and accessories. Can I help you find any fashion items today?"
-
-**2. Too Vague Queries**
-- Query: *"Recommend something"* or *"I want to buy something"* or *"Give me a complete date outfit"*
-- Response: Ask for clarification with specific suggestions
-- Example: "I'd love to help! Could you specify what type of item you're looking for? For example: 'Show me blue casual dresses' or 'I need formal shoes for a wedding'"
-
-**3. No Close Match in Dataset**
-- Query: *"I want a pure gold shirt"* (not in dataset)
-- Process: Check similarity score threshold (< 0.6)
-- Response: Suggest broader alternatives
-- Example: "I couldn't find exact matches for a gold shirt. Would you like to see elegant metallic-tone shirts or gold accessories instead?"
-
-**4. Chitchat**
-- Query: *"Hello"*, *"Thank you"*, *"How are you"*
-- Response: Engage naturally and transition to shopping assistance
-- Example: "Hello! Nice to meet you. I can help you find fashion products. What are you looking for today?"
-
-Intent classification uses LLM to categorize queries as: `specific_search`, `too_vague`, `out_of_scope`, or `chitchat`.
+LLM categorizes queries into: `specific_search`, `too_vague`, `out_of_scope`, or `chitchat`.
 
 ### Flow 1: Text-Based RAG Search
-**Query Example**: *"I need a 100% cotton blue shirt for casual wear"*
+**Example**: *"Blue cotton shirt for casual wear"*
 
-**Process**:
-1. Convert query to 1536-dim vector using `text-embedding-3-small`
-2. Search Milvus for top-K similar product descriptions
-3. Fetch full metadata from MongoDB for retrieved products
-4. GPT-4o-mini filters results based on exact requirements
-5. Generate natural language response
+Text → Embedding → Milvus search → LLM filtering → Response
 
-Text embeddings capture semantic similarity but may retrieve noisy results. LLM reasoning filters false positives.
+Text embeddings may be noisy; LLM filters false positives.
 
 ### Flow 2: Pure Visual Search
-**Query Example**: *[Upload image of a dress] + "Find similar items"*
+**Example**: [Image] + *"Find similar items"*
 
-**Process**:
-1. CLIP model converts image to 512-dim vector
-2. Search Milvus image collection for visually similar products
-3. Fetch metadata for retrieved products
-4. Present results with style descriptions
+Image → CLIP embedding → Milvus search → Direct results
 
-CLIP embeddings provide accurate visual similarity without additional filtering.
+CLIP provides accurate visual similarity without filtering.
 
 ### Flow 3: Visual Search + Attribute Filtering
-**Query Example**: *[Upload image] + "Find similar but in red color"*
+**Example**: [Image] + *"Similar but in red"*
 
-**Process**:
-1. CLIP finds top-100 visually similar items
-2. MongoDB query filters by `WHERE id IN [...] AND color = 'red'`
-3. Return filtered results
-4. Format final answer
+Image → CLIP → Top-100 results → Metadata filter → Filtered results
 
-Combines visual similarity with structured filtering to avoid hallucination.
+Combines visual similarity with attribute constraints.
 
-### Flow 4: ReAct Loop (VLM → RAG Chain)
-**Query Example**: *[Upload image of a formal dress] + "Find me similar cocktail dresses"*
+### Flow 4: ReAct Loop (VLM → RAG)
+**Example**: [Image] + *"Find cocktail dresses in this style"*
 
-**Process** (ReAct pattern):
-1. **Reasoning Turn 1**: Agent identifies need to analyze dress style first
-2. **Action Turn 1**: VLM analyzes image → "This is a black A-line cocktail dress with lace details"
-3. **Observation**: Style identified as formal cocktail wear with lace
-4. **Reasoning Turn 2**: Use extracted attributes for text search
-5. **Action Turn 2**: Text RAG search for "black cocktail dress A-line lace"
-6. **Final Answer**: Present refined results
+Image → VLM analysis (style/attributes) → Text search with extracted attributes → Results
 
-Multi-step reasoning decomposes complex queries through agent orchestration.
+Multi-step reasoning: analyze style first, then search by description.
 
 ### Flow 5: Conversational Memory
-**Query Sequence**:
-- *Turn 1*: "Show me casual white sneakers for men"
-- *Turn 2*: "Now find a matching backpack"
+**Example**: 
+- Turn 1: *"Show me white sneakers"*
+- Turn 2: *"Now find a matching backpack"* → Uses context from Turn 1
 
-**Process**:
-1. Retrieve conversation from Redis using Session ID
-2. Agent understands context from previous turn
-3. Transform "matching backpack" → "casual white backpack for men"
-4. Execute Text RAG with augmented query
-5. Save new turn to Redis
+Retrieves chat history → Understands context → Augments query → Execute search
 
-Maintains context across turns for natural multi-turn conversations.
+Enables natural multi-turn conversations via Streamlit session state.
 
 ## Installation
 
 **Prerequisites:**
-- Python 3.11+
+- Python 3.11+ or 3.13+
 - OpenAI API Key
+- Docker & Docker Compose (for Milvus)
 
+**Quick Start:**
 
-
-
-**Detailed Setup:**
-
-1. **Clone and install dependencies**
+### 1. Clone and Install Dependencies
 ```bash
+git clone <repository-url>
 cd OmniShopAgent
 python -m venv venv
-source venv/bin/activate  # macOS/Linux
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-1. **Configure environment**
-Create a `.env` file with your configuration:
+### 2. Configure Environment
+Create a `.env` file in the project root:
 ```bash
-# Required
-OPENAI_API_KEY=your_api_key_here
-
-# MongoDB
-MONGO_URI=mongodb://localhost:27017
-
-# Milvus (uses embedded Milvus Lite by default)
-MILVUS_URI=./data/milvus_lite.db
-
-# See SETUP.md for all configuration options
+OPENAI_API_KEY=your_openai_api_key_here
+CLIP_SERVER_URL=grpc://localhost:51000
 ```
 
-3. **Start required services**
+### 3. Download Dataset
 ```bash
-# MongoDB
-brew services start mongodb-community  # macOS
-# or
-docker run -d -p 27017:27017 --name mongodb mongo:latest
+# Option 1: Use Kaggle CLI (requires Kaggle account)
+kaggle datasets download -d paramaggarwal/fashion-product-images-dataset
+unzip fashion-product-images-dataset.zip -d data/
 
-# CLIP Server (in a separate terminal)
-cd ~/Documents/clip
-python -m clip_server torch-flow.yml
+# Option 2: Use download script
+python scripts/download_dataset.py
 ```
 
-4. **Import data and create indexes**
-```bash
-# Import product data to MongoDB
-python scripts/import_to_mongodb.py --clear
-
-# Generate and store embeddings
-python scripts/index_data.py --mode both
-
-# Test all services
-python scripts/test_services.py
+The dataset should be extracted to `./data/` with the following structure:
 ```
+data/
+├── images/       # Product images
+├── styles.csv    # Product metadata
+└── images.csv    # Image paths
+```
+
+### 4. Start Required Services
+
+**Terminal 1 - Start Milvus Vector Database:**
+```bash
+docker-compose up
+```
+
+Wait until you see `Milvus Proxy started successfully` in the logs.
+
+**Terminal 2 - Start CLIP Server:**
+```bash
+# Install CLIP server if not already installed
+pip install clip-server
+
+# Start CLIP server on port 51000
+python -m clip_server
+```
+
+The CLIP server will start at `grpc://0.0.0.0:51000` by default.
+
+### 5. Index Product Data (One-time Setup)
+In a new terminal:
+```bash
+source venv/bin/activate  # Activate virtual environment
+
+# Generate and store embeddings in Milvus
+# This will take ~10-15 minutes for 44k products
+python scripts/index_data.py
+```
+
+You should see progress like:
+```
+Processing batch 1/440...
+Processing batch 2/440...
+...
+Indexing complete! Indexed 44,000 products.
+```
+
+### 6. Launch the Application
+```bash
+streamlit run app.py
+```
+
+The app will automatically open in your browser at `http://localhost:8501` 
+
+
+
 
 
 
