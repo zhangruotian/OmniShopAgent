@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.tools import FilterProductsTool, ProductSearchTool
+from app.tools import FilterProductsTool, ImageSearchTool, ProductSearchTool
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -74,10 +74,47 @@ def test_filter_products():
             logger.error(f"Error in filter test case {idx}", exc_info=True)
 
 
+def test_image_search():
+    """Test image-based product search"""
+    print("\n" + "=" * 80)
+    print("TEST 3: Image Search Tool".center(80))
+    print("=" * 80 + "\n")
+
+    tool = ImageSearchTool()
+
+    # Find some sample images first
+    import os
+    from pathlib import Path
+
+    image_dir = Path("data/images")
+    if not image_dir.exists():
+        print("⚠️  Skipping image search test: data/images directory not found")
+        return
+
+    # Get a few sample images
+    sample_images = list(image_dir.glob("*.jpg"))[:3]
+
+    if not sample_images:
+        print("⚠️  Skipping image search test: no images found in data/images")
+        return
+
+    for idx, image_path in enumerate(sample_images, 1):
+        print(f"\nTest Case {idx}: Find similar products to '{image_path.name}'")
+        print("-" * 80)
+
+        try:
+            result = tool._run(image_path=str(image_path), limit=3)
+            print(result)
+            print("\n✅ Test passed")
+        except Exception as e:
+            print(f"\n❌ Test failed: {e}")
+            logger.error(f"Error in image search test case {idx}", exc_info=True)
+
+
 def test_tool_with_langchain():
     """Test tool integration with LangChain"""
     print("\n" + "=" * 80)
-    print("TEST 3: LangChain Tool Integration".center(80))
+    print("TEST 4: LangChain Tool Integration".center(80))
     print("=" * 80 + "\n")
 
     try:
@@ -94,7 +131,7 @@ def test_tool_with_langchain():
         )
 
         # Initialize tools
-        tools = [ProductSearchTool(), FilterProductsTool()]
+        tools = [ProductSearchTool(), FilterProductsTool(), ImageSearchTool()]
 
         # Create agent
         agent = initialize_agent(
@@ -142,7 +179,10 @@ def main():
         # Test 2: Filter Products
         test_filter_products()
 
-        # Test 3: LangChain Integration (optional)
+        # Test 3: Image Search
+        test_image_search()
+
+        # Test 4: LangChain Integration (optional)
         test_tool_with_langchain()
 
         print("\n" + "=" * 80)
@@ -158,4 +198,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

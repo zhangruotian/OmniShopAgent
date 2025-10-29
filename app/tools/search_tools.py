@@ -4,7 +4,8 @@ Provides text-based and image-based product search capabilities
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
@@ -115,9 +116,6 @@ class ProductSearchTool(BaseTool):
             logger.error(f"Error searching products: {e}", exc_info=True)
             return f"Error searching products: {str(e)}"
 
-    async def _arun(self, *args, **kwargs) -> str:
-        """Async version (not implemented, falls back to sync)"""
-        return self._run(*args, **kwargs)
 
     def _format_results(self, results: List[Dict[str, Any]]) -> str:
         """Format search results into readable text
@@ -270,7 +268,9 @@ class FilterProductsTool(BaseTool):
             output = f"Found {len(results)} product(s) matching filters:\n\n"
 
             for idx, product in enumerate(results, 1):
-                output += f"{idx}. {product.get('productDisplayName', 'Unknown Product')}\n"
+                output += (
+                    f"{idx}. {product.get('productDisplayName', 'Unknown Product')}\n"
+                )
                 output += f"   ID: {product.get('id', 'N/A')}\n"
                 output += f"   Category: {product.get('masterCategory', 'N/A')} > {product.get('subCategory', 'N/A')} > {product.get('articleType', 'N/A')}\n"
                 output += f"   Color: {product.get('baseColour', 'N/A')}\n"
@@ -290,7 +290,167 @@ class FilterProductsTool(BaseTool):
             logger.error(f"Error filtering products: {e}", exc_info=True)
             return f"Error filtering products: {str(e)}"
 
-    async def _arun(self, *args, **kwargs) -> str:
-        """Async version (not implemented, falls back to sync)"""
-        return self._run(*args, **kwargs)
+
+class ImageSearchInput(BaseModel):
+    """Input schema for image-based product search"""
+
+    image_path: str = Field(
+        description="Path to the image file to search for similar products, e.g., 'data/images/12345.jpg'"
+    )
+    limit: int = Field(
+        default=5,
+        description="Maximum number of similar products to return (1-20)",
+        ge=1,
+        le=20,
+    )
+    filters: Optional[str] = Field(
+        default=None,
+        description="Optional filter expression, e.g., 'gender == \"Women\"' or 'masterCategory == \"Apparel\"'",
+    )
+
+
+class ImageSearchTool(BaseTool):
+    """Tool for finding similar products using image search"""
+
+    name: str = "search_by_image"
+    description: str = """
+    Find similar fashion products using an image.
+    
+    Use this tool when users:
+    - Want to find products similar to a specific product image
+    - Ask "find similar items to product X"
+    - Provide a product ID and want similar recommendations
+    
+    The tool uses visual similarity (CLIP embeddings) to find products that look similar.
+    Input should be a path to an image file, typically in format: 'data/images/{product_id}.jpg'
+    """
+    args_schema: type[BaseModel] = ImageSearchInput
+
+    embedding_service: EmbeddingService = Field(default=None, exclude=True)
+    milvus_service: MilvusService = Field(default=None, exclude=True)
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        if self.embedding_service is None:
+            self.embedding_service = EmbeddingService()
+            self.embedding_service.connect_clip()
+        if self.milvus_service is None:
+            self.milvus_service = MilvusService()
+            self.milvus_service.connect()
+
+    def _run(
+        self,
+        image_path: str,
+        limit: int = 5,
+        filters: Optional[str] = None,
+    ) -> str:
+        """Execute image-based product search
+
+        Args:
+            image_path: Path to the image file
+            limit: Maximum number of results
+            filters: Optional filter expression
+
+        Returns:
+            Formatted string with similar products
+        """
+        try:
+            logger.info(f"Searching similar products for image: '{image_path}', limit: {limit}")
+
+            # Validate image path
+            img_path = Path(image_path)
+            if not img_path.exists():
+                return f"Error: Image file not found at '{image_path}'"
+
+            # Generate image embedding
+            image_embedding = self.embedding_service.get_image_embedding(image_path)
+
+            if image_embedding is None:
+                return f"Error: Failed to generate embedding for image '{image_path}'"
+
+            # Search in Milvus
+            results = self.milvus_service.search_similar_images(
+                query_embedding=image_embedding,
+                limit=limit + 1,  # +1 to potentially exclude the query image itself
+                filters=filters,
+                output_fields=[
+                    "id",
+                    "image_path",
+                    "productDisplayName",
+                    "gender",
+                    "masterCategory",
+                    "subCategory",
+                    "articleType",
+                    "baseColour",
+                    "season",
+                    "usage",
+                ],
+            )
+
+            if not results:
+                return "No similar products found."
+
+            # Filter out the query image itself if present
+            query_id = img_path.stem  # Extract product ID from filename
+            filtered_results = []
+            for result in results:
+                # Check if this is not the query image
+                result_path = result.get("image_path", "")
+                if Path(result_path).stem != query_id:
+                    filtered_results.append(result)
+                    if len(filtered_results) >= limit:
+                        break
+
+            if not filtered_results:
+                return "No similar products found (excluding the query image)."
+
+            # Format results
+            formatted_results = self._format_results(filtered_results, image_path)
+            logger.info(f"Found {len(filtered_results)} similar products")
+
+            return formatted_results
+
+        except Exception as e:
+            logger.error(f"Error searching by image: {e}", exc_info=True)
+            return f"Error searching by image: {str(e)}"
+
+    def _format_results(
+        self, results: List[Dict[str, Any]], query_image_path: str
+    ) -> str:
+        """Format image search results into readable text
+
+        Args:
+            results: List of product dictionaries from Milvus
+            query_image_path: Path to the query image
+
+        Returns:
+            Formatted string representation
+        """
+        if not results:
+            return "No similar products found."
+
+        output = f"Found {len(results)} similar product(s) to '{query_image_path}':\n\n"
+
+        for idx, product in enumerate(results, 1):
+            output += (
+                f"{idx}. {product.get('productDisplayName', 'Unknown Product')}\n"
+            )
+            output += f"   ID: {product.get('id', 'N/A')}\n"
+            output += f"   Category: {product.get('masterCategory', 'N/A')} > {product.get('subCategory', 'N/A')} > {product.get('articleType', 'N/A')}\n"
+            output += f"   Color: {product.get('baseColour', 'N/A')}\n"
+            output += f"   Gender: {product.get('gender', 'N/A')}\n"
+
+            if product.get("season"):
+                output += f"   Season: {product.get('season')}\n"
+            if product.get("usage"):
+                output += f"   Usage: {product.get('usage')}\n"
+
+            # Visual similarity score
+            if "distance" in product:
+                similarity = 1 - product["distance"]  # Convert distance to similarity
+                output += f"   Visual Similarity: {similarity:.2%}\n"
+
+            output += "\n"
+
+        return output.strip()
 
