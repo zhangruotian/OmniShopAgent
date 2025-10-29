@@ -9,7 +9,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.tools import FilterProductsTool, ImageSearchTool, ProductSearchTool
+from app.tools import (
+    FilterProductsTool,
+    ImageSearchTool,
+    ProductSearchTool,
+    VLMReasoningTool,
+)
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -111,10 +116,57 @@ def test_image_search():
             logger.error(f"Error in image search test case {idx}", exc_info=True)
 
 
+def test_vlm_reasoning():
+    """Test VLM image analysis"""
+    print("\n" + "=" * 80)
+    print("TEST 4: VLM Reasoning Tool".center(80))
+    print("=" * 80 + "\n")
+
+    tool = VLMReasoningTool()
+
+    # Find sample images
+    from pathlib import Path
+
+    image_dir = Path("data/images")
+    if not image_dir.exists():
+        print("⚠️  Skipping VLM test: data/images directory not found")
+        return
+
+    # Get a few sample images
+    sample_images = list(image_dir.glob("*.jpg"))[:2]
+
+    if not sample_images:
+        print("⚠️  Skipping VLM test: no images found in data/images")
+        return
+
+    for idx, image_path in enumerate(sample_images, 1):
+        print(f"\nTest Case {idx}: Analyze style of '{image_path.name}'")
+        print("-" * 80)
+
+        try:
+            # Test without focus
+            result = tool._run(image_path=str(image_path))
+            print(f"Analysis:\n{result}")
+            print("\n✅ Test passed")
+
+            # Test with focus
+            print(f"\nTest Case {idx}b: Analyze with focus on 'color and style'")
+            print("-" * 80)
+            result_focused = tool._run(
+                image_path=str(image_path), focus="color and style"
+            )
+            print(f"Focused Analysis:\n{result_focused}")
+            print("\n✅ Test passed")
+
+        except Exception as e:
+            print(f"\n❌ Test failed: {e}")
+            logger.error(f"Error in VLM test case {idx}", exc_info=True)
+
+
 def test_tool_with_langchain():
     """Test tool integration with LangChain"""
     print("\n" + "=" * 80)
-    print("TEST 4: LangChain Tool Integration".center(80))
+    print("TEST 5: LangChain Tool Integration".center(80))
     print("=" * 80 + "\n")
 
     try:
@@ -131,7 +183,12 @@ def test_tool_with_langchain():
         )
 
         # Initialize tools
-        tools = [ProductSearchTool(), FilterProductsTool(), ImageSearchTool()]
+        tools = [
+            ProductSearchTool(),
+            FilterProductsTool(),
+            ImageSearchTool(),
+            VLMReasoningTool(),
+        ]
 
         # Create agent
         agent = initialize_agent(
@@ -182,7 +239,10 @@ def main():
         # Test 3: Image Search
         test_image_search()
 
-        # Test 4: LangChain Integration (optional)
+        # Test 4: VLM Reasoning
+        test_vlm_reasoning()
+
+        # Test 5: LangChain Integration (optional)
         test_tool_with_langchain()
 
         print("\n" + "=" * 80)

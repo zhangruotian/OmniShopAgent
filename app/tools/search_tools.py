@@ -1,13 +1,15 @@
 """
 Search Tools for Product Discovery
-Provides text-based and image-based product search capabilities
+Provides text-based, image-based, and VLM reasoning capabilities
 """
 
+import base64
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from langchain.tools import BaseTool
+from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from app.config import settings
@@ -115,7 +117,6 @@ class ProductSearchTool(BaseTool):
         except Exception as e:
             logger.error(f"Error searching products: {e}", exc_info=True)
             return f"Error searching products: {str(e)}"
-
 
     def _format_results(self, results: List[Dict[str, Any]]) -> str:
         """Format search results into readable text
@@ -355,7 +356,9 @@ class ImageSearchTool(BaseTool):
             Formatted string with similar products
         """
         try:
-            logger.info(f"Searching similar products for image: '{image_path}', limit: {limit}")
+            logger.info(
+                f"Searching similar products for image: '{image_path}', limit: {limit}"
+            )
 
             # Validate image path
             img_path = Path(image_path)
@@ -432,9 +435,7 @@ class ImageSearchTool(BaseTool):
         output = f"Found {len(results)} similar product(s) to '{query_image_path}':\n\n"
 
         for idx, product in enumerate(results, 1):
-            output += (
-                f"{idx}. {product.get('productDisplayName', 'Unknown Product')}\n"
-            )
+            output += f"{idx}. {product.get('productDisplayName', 'Unknown Product')}\n"
             output += f"   ID: {product.get('id', 'N/A')}\n"
             output += f"   Category: {product.get('masterCategory', 'N/A')} > {product.get('subCategory', 'N/A')} > {product.get('articleType', 'N/A')}\n"
             output += f"   Color: {product.get('baseColour', 'N/A')}\n"
@@ -454,3 +455,131 @@ class ImageSearchTool(BaseTool):
 
         return output.strip()
 
+
+class VLMAnalysisInput(BaseModel):
+    """Input schema for VLM image analysis"""
+
+    image_path: str = Field(
+        description="Path to the image file to analyze, e.g., 'data/images/12345.jpg'"
+    )
+    focus: Optional[str] = Field(
+        default=None,
+        description="Optional focus area for analysis, e.g., 'color', 'style', 'pattern', 'occasion'",
+    )
+
+
+class VLMReasoningTool(BaseTool):
+    """Tool for analyzing fashion product images using Vision Language Model"""
+
+    name: str = "analyze_image_style"
+    description: str = """
+    Analyze a fashion product image using AI vision to extract detailed style information.
+    
+    Use this tool when you need to:
+    - Understand the style, color, pattern, or design of a product from an image
+    - Extract attributes like "casual", "formal", "vintage", "modern", etc.
+    - Identify material appearance (e.g., "cotton", "denim", "leather")
+    - Determine occasion suitability (e.g., "office wear", "party", "sports")
+    - Get detailed descriptions for subsequent text-based searches
+    
+    This tool uses GPT-4o-mini with vision to provide detailed fashion analysis.
+    Input should be a path to an image file, typically: 'data/images/{product_id}.jpg'
+    
+    Example use case: User uploads a dress image and asks "find similar cocktail dresses"
+    -> First use this tool to analyze the dress style
+    -> Then use the analysis result for text-based search
+    """
+    args_schema: type[BaseModel] = VLMAnalysisInput
+
+    openai_client: OpenAI = Field(default=None, exclude=True)
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        if self.openai_client is None:
+            self.openai_client = OpenAI(api_key=settings.openai_api_key)
+
+    def _run(
+        self,
+        image_path: str,
+        focus: Optional[str] = None,
+    ) -> str:
+        """Execute VLM analysis on fashion product image
+
+        Args:
+            image_path: Path to the image file
+            focus: Optional focus area for analysis
+
+        Returns:
+            Detailed text description of the product's visual attributes
+        """
+        try:
+            logger.info(f"Analyzing image with VLM: '{image_path}'")
+
+            # Validate image path
+            img_path = Path(image_path)
+            if not img_path.exists():
+                return f"Error: Image file not found at '{image_path}'"
+
+            # Read and encode image
+            with open(img_path, "rb") as image_file:
+                image_data = base64.b64encode(image_file.read()).decode("utf-8")
+
+            # Construct prompt based on focus
+            if focus:
+                prompt = f"""Analyze this fashion product image with a focus on {focus}.
+
+Provide a detailed description including:
+- Main product type (e.g., shirt, dress, shoes, bag)
+- Specific focus on: {focus}
+- Style characteristics relevant to {focus}
+- Any other notable features related to {focus}
+
+Keep the description concise but informative (2-3 sentences)."""
+            else:
+                prompt = """Analyze this fashion product image and provide a detailed description.
+
+Include the following information:
+- Product type (e.g., shirt, dress, shoes, pants, bag, accessory)
+- Primary colors
+- Style/design (e.g., casual, formal, sporty, vintage, modern)
+- Pattern or texture (e.g., plain, striped, checked, floral, solid)
+- Key features (e.g., collar type, sleeve length, fit, embellishments)
+- Material appearance (if obvious, e.g., denim, cotton, leather)
+- Suitable occasion or use case (e.g., office wear, party, casual outing, sports)
+
+Provide a comprehensive yet concise description (3-4 sentences)."""
+
+            # Call GPT-4o-mini with vision
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{image_data}",
+                                    "detail": "high",
+                                },
+                            },
+                        ],
+                    }
+                ],
+                max_tokens=500,
+                temperature=0.3,  # Lower temperature for more consistent analysis
+            )
+
+            analysis = response.choices[0].message.content.strip()
+            logger.info(f"VLM analysis completed for '{image_path}'")
+
+            return analysis
+
+        except FileNotFoundError:
+            error_msg = f"Error: Image file not found at '{image_path}'"
+            logger.error(error_msg)
+            return error_msg
+        except Exception as e:
+            logger.error(f"Error in VLM analysis: {e}", exc_info=True)
+            return f"Error analyzing image: {str(e)}"

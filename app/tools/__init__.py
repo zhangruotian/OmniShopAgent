@@ -6,6 +6,12 @@ from app.tools.search_tools import (
     FilterProductsTool,
     ImageSearchTool,
     ProductSearchTool,
+    VLMReasoningTool,
 )
 
-__all__ = ["ProductSearchTool", "FilterProductsTool", "ImageSearchTool"]
+__all__ = [
+    "ProductSearchTool",
+    "FilterProductsTool",
+    "ImageSearchTool",
+    "VLMReasoningTool",
+]
