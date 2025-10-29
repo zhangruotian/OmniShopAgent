@@ -21,15 +21,13 @@ OmniShopAgent combines Retrieval-Augmented Generation (RAG), multi-modal search,
 | **LLM** | GPT-4o-mini | Agent reasoning, VLM analysis, response generation |
 | **Text Embedding** | text-embedding-3-small| Product description vectorization |
 | **Image Embedding** | CLIP ViT-B/32 | Visual similarity search |
-| **Vector Database** | Milvus Lite | Efficient similarity search for text & image vectors (embedded) |
-| **Frontend** | Streamlit | Interactive web interface |
-| **Agent Framework** | LangChain | Tool orchestration and flow routing |
+| **Vector Database** | Milvus | Efficient similarity search for text & image vectors |
+| **Frontend** | Streamlit | Interactive web interface and session management for conversational AI |
+| **Agent Framework** | LangChain | Tool orchestration and flow routing for the agent |
 
 ## Dataset
 
 Uses the **Fashion Product Images Dataset** from Kaggle (~44,000 products with attributes like color, category, gender, season, usage).
-
-Download: `kaggle datasets download -d paramaggarwal/fashion-product-images-dataset`
 
 ## Architecture
 
@@ -191,7 +189,7 @@ Enables natural multi-turn conversations via Streamlit session state.
 ## Installation
 
 **Prerequisites:**
-- Python 3.11+ or 3.13+
+- Python 3.11+
 - OpenAI API Key
 - Docker & Docker Compose (for Milvus)
 
