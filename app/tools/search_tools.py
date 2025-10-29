@@ -60,7 +60,6 @@ class ProductSearchTool(BaseTool):
         super().__init__(**data)
         if self.embedding_service is None:
             self.embedding_service = EmbeddingService()
-            self.embedding_service.connect_clip()
         if self.milvus_service is None:
             self.milvus_service = MilvusService()
             self.milvus_service.connect()
@@ -246,6 +245,9 @@ class FilterProductsTool(BaseTool):
 
             logger.info(f"Filtering products with: {filter_expr}, limit: {limit}")
 
+            if not self.milvus_service.is_connected():
+                self.milvus_service.connect()
+
             # Query Milvus with filters
             # Use a dummy vector search with filters (get any products matching filters)
             dummy_vector = [0.0] * settings.text_dim
@@ -360,66 +362,94 @@ class ImageSearchTool(BaseTool):
             Formatted string with similar products
         """
         try:
-            logger.info(
-                f"Searching similar products for image: '{image_path}', limit: {limit}"
-            )
-
-            # Validate image path
-            img_path = Path(image_path)
-            if not img_path.exists():
-                return f"Error: Image file not found at '{image_path}'"
-
-            # Generate image embedding
-            image_embedding = self.embedding_service.get_image_embedding(image_path)
-
-            if image_embedding is None:
-                return f"Error: Failed to generate embedding for image '{image_path}'"
-
-            # Search in Milvus
-            results = self.milvus_service.search_similar_images(
-                query_embedding=image_embedding,
-                limit=limit + 1,  # +1 to potentially exclude the query image itself
-                filters=filters,
-                output_fields=[
-                    "id",
-                    "image_path",
-                    "productDisplayName",
-                    "gender",
-                    "masterCategory",
-                    "subCategory",
-                    "articleType",
-                    "baseColour",
-                    "season",
-                    "usage",
-                ],
+            results = self._get_image_search_results(
+                image_path=image_path, limit=limit, filters=filters
             )
 
             if not results:
                 return "No similar products found."
 
-            # Filter out the query image itself if present
-            query_id = img_path.stem  # Extract product ID from filename
-            filtered_results = []
-            for result in results:
-                # Check if this is not the query image
-                result_path = result.get("image_path", "")
-                if Path(result_path).stem != query_id:
-                    filtered_results.append(result)
-                    if len(filtered_results) >= limit:
-                        break
-
-            if not filtered_results:
-                return "No similar products found (excluding the query image)."
-
-            # Format results
-            formatted_results = self._format_results(filtered_results, image_path)
-            logger.info(f"Found {len(filtered_results)} similar products")
+            formatted_results = self._format_results(results, image_path)
+            logger.info(f"Found {len(results)} similar products")
 
             return formatted_results
 
+        except FileNotFoundError as e:
+            logger.error(str(e))
+            return f"Error: {str(e)}"
         except Exception as e:
             logger.error(f"Error searching by image: {e}", exc_info=True)
             return f"Error searching by image: {str(e)}"
+
+    def search(
+        self,
+        image_path: str,
+        limit: int = 5,
+        filters: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return raw search results for programmatic use"""
+
+        return self._get_image_search_results(
+            image_path=image_path, limit=limit, filters=filters
+        )
+
+    def _get_image_search_results(
+        self,
+        image_path: str,
+        limit: int = 5,
+        filters: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        logger.info(
+            f"Searching similar products for image: '{image_path}', limit: {limit}"
+        )
+
+        # Validate image path
+        img_path = Path(image_path)
+        if not img_path.exists():
+            raise FileNotFoundError(f"Image file not found at '{image_path}'")
+
+        if not self.milvus_service.is_connected():
+            self.milvus_service.connect()
+
+        # Generate image embedding
+        image_embedding = self.embedding_service.get_image_embedding(image_path)
+
+        if image_embedding is None:
+            raise RuntimeError(f"Failed to generate embedding for image '{image_path}'")
+
+        # Search in Milvus
+        results = self.milvus_service.search_similar_images(
+            query_embedding=image_embedding,
+            limit=limit + 1,  # +1 to potentially exclude the query image itself
+            filters=filters,
+            output_fields=[
+                "id",
+                "image_path",
+                "productDisplayName",
+                "gender",
+                "masterCategory",
+                "subCategory",
+                "articleType",
+                "baseColour",
+                "season",
+                "usage",
+            ],
+        )
+
+        if not results:
+            return []
+
+        # Filter out the query image itself if present
+        query_id = img_path.stem  # Extract product ID from filename
+        filtered_results = []
+        for result in results:
+            result_path = result.get("image_path", "")
+            if Path(result_path).stem != query_id:
+                filtered_results.append(result)
+            if len(filtered_results) >= limit:
+                break
+
+        return filtered_results
 
     def _format_results(
         self, results: List[Dict[str, Any]], query_image_path: str

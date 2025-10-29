@@ -18,13 +18,13 @@ OmniShopAgent combines Retrieval-Augmented Generation (RAG), multi-modal search,
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| **LLM** | GPT-4o-mini (OpenAI) | Agent reasoning, VLM analysis, response generation |
-| **Text Embedding** | text-embedding-3-small (OpenAI) | Product description vectorization (1536-dim) |
-| **Image Embedding** | CLIP ViT-B/32 (Local) | Visual similarity search (512-dim) |
-| **Vector Database** | Milvus Lite | Efficient similarity search for text & image vectors |
-| **Metadata Store** | MongoDB | Product attributes (price, color, category, etc.) |
+| **LLM** | GPT-4o-mini | Agent reasoning, VLM analysis, response generation |
+| **Text Embedding** | text-embedding-3-small| Product description vectorization |
+| **Image Embedding** | CLIP ViT-B/32 | Visual similarity search |
+| **Vector Database** | Milvus  | Efficient similarity search for text & image vectors |
+| **Metadata Store** | MongoDB | Product metadata |
 | **Session Store** | Redis | Conversation history and user context |
-| **Backend Framework** | FastAPI | RESTful API with async support |
+| **Backend Framework** | FastAPI | RESTful API |
 | **Agent Framework** | LangChain | Tool orchestration and ReAct loop implementation |
 
 ## Dataset
@@ -244,12 +244,9 @@ Maintains context across turns for natural multi-turn conversations.
 **Prerequisites:**
 - Python 3.11+
 - OpenAI API Key
-- MongoDB (local or Docker)
-- CLIP Server (for image embeddings)
 
-**Quick Start:**
 
-See **[QUICKSTART.md](QUICKSTART.md)** for a 5-minute setup guide.
+
 
 **Detailed Setup:**
 
@@ -261,7 +258,7 @@ source venv/bin/activate  # macOS/Linux
 pip install -r requirements.txt
 ```
 
-2. **Configure environment**
+1. **Configure environment**
 Create a `.env` file with your configuration:
 ```bash
 # Required
@@ -300,82 +297,9 @@ python scripts/index_data.py --mode both
 python scripts/test_services.py
 ```
 
-**Quick Test:**
-```python
-from app.services import get_mongodb_service, get_embedding_service, get_milvus_service
 
-# Test the services
-mongo = get_mongodb_service()
-print(f"Products: {mongo.count_products()}")
 
-embed = get_embedding_service()
-emb = embed.get_text_embedding("blue jeans")
-print(f"Embedding dimension: {len(emb)}")
 
-milvus = get_milvus_service()
-stats = milvus.get_collection_stats("text_embeddings")
-print(f"Text embeddings: {stats['row_count']}")
-```
 
-## Documentation
 
-- **[QUICKSTART.md](QUICKSTART.md)** - 5-minute setup guide
-- **[SETUP.md](SETUP.md)** - Detailed setup instructions
-- **[docs/SERVICES.md](docs/SERVICES.md)** - Service layer documentation
 
-## Project Structure
-
-```
-OmniShopAgent/
-├── app/
-│   ├── config.py              # Configuration management
-│   ├── api/
-│   │   └── __init__.py        # API endpoints (coming soon)
-│   ├── agents/
-│   │   └── __init__.py        # Agent implementations (coming soon)
-│   └── services/              # ✅ Service layer (completed)
-│       ├── __init__.py        # Service exports
-│       ├── mongodb_service.py # Product metadata storage
-│       ├── embedding_service.py # Text & image embeddings (OpenAI + CLIP)
-│       └── milvus_service.py  # Vector storage & similarity search
-├── scripts/
-│   ├── download_dataset.py    # Download fashion dataset
-│   ├── import_to_mongodb.py   # ✅ Import data to MongoDB
-│   ├── index_data.py          # ✅ Generate and store embeddings
-│   └── test_services.py       # ✅ Test all services
-├── data/
-│   ├── styles.csv             # Product metadata
-│   ├── images.csv             # Image URLs
-│   ├── images/                # Product images (~44k)
-│   └── milvus_lite.db         # Embedded vector database
-├── docs/
-│   └── SERVICES.md            # Service layer documentation
-├── tests/
-├── requirements.txt
-├── QUICKSTART.md              # 5-minute setup guide
-├── SETUP.md                   # Detailed setup instructions
-└── README.md
-```
-
-## Current Status
-
-### ✅ Completed
-- **Service Layer**: MongoDB, Embedding (OpenAI + CLIP), and Milvus services
-- **Data Pipeline**: Import scripts and indexing tools
-- **Testing**: Comprehensive service tests
-
-### 🚧 In Progress
-- **LangChain Tools**: Product search tools
-- **Agent Layer**: Conversational agent with ReAct pattern
-- **API Layer**: FastAPI endpoints
-- **UI Layer**: User interface
-
-### 📋 Next Steps
-1. Develop LangChain tools for product search
-2. Implement agent with tool orchestration
-3. Build FastAPI application
-4. Create user interface
-
-## License
-
-MIT License - see [LICENSE](LICENSE) for details

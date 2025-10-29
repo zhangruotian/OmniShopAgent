@@ -58,9 +58,13 @@ class IntentClassifier:
             IntentClassification with intent type and reasoning
         """
         try:
-            logger.info(f"Classifying intent for query: '{query}' (has_image={has_image})")
+            logger.info(
+                f"Classifying intent for query: '{query}' (has_image={has_image})"
+            )
 
-            prompt = self._build_classification_prompt(query, has_image, conversation_history)
+            prompt = self._build_classification_prompt(
+                query, has_image, conversation_history
+            )
 
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -90,7 +94,9 @@ class IntentClassifier:
                 reasoning="Error during classification, defaulting to search",
             )
 
-    def _build_classification_prompt(self, query: str, has_image: bool, conversation_history: list = None) -> str:
+    def _build_classification_prompt(
+        self, query: str, has_image: bool, conversation_history: list = None
+    ) -> str:
         """Build prompt for intent classification"""
         image_context = (
             "\n- User has uploaded an image with their query"
@@ -105,8 +111,8 @@ class IntentClassifier:
             # Get last 6 messages (3 exchanges)
             recent_messages = conversation_history[-6:]
             for msg in recent_messages:
-                role = msg.get('role', 'unknown')
-                content = msg.get('content', '')[:150]  # Truncate long messages
+                role = msg.get("role", "unknown")
+                content = msg.get("content", "")[:150]  # Truncate long messages
                 history_context += f"{role.upper()}: {content}\n"
             history_context += "\nIMPORTANT: Consider this conversation history when classifying. If the current query refers to something from previous context (like 'this', 'that', 'matching', 'similar style'), it should be classified as SPECIFIC_SEARCH, not TOO_VAGUE."
 
@@ -236,10 +242,14 @@ I can help you:
 What are you looking for today?"""
 
         elif any(thanks in query_lower for thanks in ["thank", "thanks"]):
-            return "You're welcome! Let me know if you need help finding anything else! 😊"
+            return (
+                "You're welcome! Let me know if you need help finding anything else! 😊"
+            )
 
         elif any(bye in query_lower for bye in ["bye", "goodbye", "see you"]):
-            return "Goodbye! Happy shopping! Come back anytime you need fashion advice! 👋"
+            return (
+                "Goodbye! Happy shopping! Come back anytime you need fashion advice! 👋"
+            )
 
         else:
             return """I'm here to help you find fashion products! 
@@ -271,4 +281,3 @@ def get_boundary_handler() -> BoundaryHandler:
     if _boundary_handler is None:
         _boundary_handler = BoundaryHandler()
     return _boundary_handler
-

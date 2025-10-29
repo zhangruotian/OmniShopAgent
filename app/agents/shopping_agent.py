@@ -3,13 +3,16 @@ Conversational Shopping Agent
 Implements Flows 1-4 with tool orchestration
 """
 
+import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from langchain.tools import BaseTool
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_openai import ChatOpenAI
 
+from app.agents.flow_router import FlowRouter, FlowType
 from app.config import settings
 from app.tools import (
     FilterProductsTool,
@@ -28,6 +31,8 @@ class ShoppingAgent:
         self,
         session_id: Optional[str] = None,
         chat_history: Optional[ChatMessageHistory] = None,
+        llm: Optional[ChatOpenAI] = None,
+        tools: Optional[Dict[str, BaseTool]] = None,
     ):
         """Initialize shopping agent
 
@@ -36,22 +41,27 @@ class ShoppingAgent:
             chat_history: Optional pre-configured chat history (for persistent conversations)
         """
         self.session_id = session_id or "default"
-        self.llm = ChatOpenAI(
+        self.llm = llm or ChatOpenAI(
             model=settings.openai_model,
             temperature=settings.openai_temperature,
             api_key=settings.openai_api_key,
         )
 
         # Initialize tools
-        self.tools = {
+        self.tools = tools or {
             "search_products": ProductSearchTool(),
             "filter_products": FilterProductsTool(),
             "search_by_image": ImageSearchTool(),
             "analyze_image_style": VLMReasoningTool(),
         }
 
+        # Initialize flow router
+        self.flow_router = FlowRouter(llm=self.llm)
+
         # Initialize chat history
         self.chat_history = chat_history or ChatMessageHistory()
+        self.current_step = ""  # Track current processing step
+        self.tools_used = []  # Track tools used in current query
 
         logger.info(f"Shopping agent initialized for session: {self.session_id}")
 
@@ -125,37 +135,65 @@ class ShoppingAgent:
         image_path: Optional[str],
         context: str,
     ) -> str:
-        """Route query to appropriate tools and generate response"""
+        """Route query to appropriate tools and generate response using LLM-based routing"""
 
-        query_lower = query.lower()
+        # Use FlowRouter to determine the best flow
+        flow_type = self.flow_router.route(
+            query=query, has_image=bool(image_path), context=context
+        )
 
-        # Determine which tool(s) to use
-        if image_path:
-            # Image-based queries
-            if any(word in query_lower for word in ["analyze", "describe", "what is", "tell me about", "style"]):
-                # Flow 4: VLM analysis first, then search
-                return self._execute_vlm_then_search(query, image_path, context)
-            elif any(word in query_lower for word in ["but", "in", "with", "filter"]):
-                # Flow 3: Visual search + filter
-                return self._execute_visual_with_filter(query, image_path, context)
-            else:
-                # Flow 2: Pure visual search
-                return self._execute_visual_search(query, image_path, context)
+        logger.info(f"Executing flow: {flow_type.value}")
+
+        # Execute the appropriate flow
+        if flow_type == FlowType.TEXT_RAG:
+            return self._execute_text_search(query, context)
+        elif flow_type == FlowType.VISUAL_SEARCH:
+            return self._execute_visual_search(query, image_path, context)
+        elif flow_type == FlowType.VISUAL_FILTER:
+            return self._execute_visual_with_filter(query, image_path, context)
+        elif flow_type == FlowType.VLM_ANALYSIS:
+            return self._execute_vlm_only(query, image_path, context)
+        elif flow_type == FlowType.VLM_SEARCH:
+            return self._execute_vlm_then_search(query, image_path, context)
         else:
-            # Text-only queries
-            if any(word in query_lower for word in ["filter", "gender", "color", "season", "category"]):
-                # Use filter tool
-                return self._execute_filter(query, context)
-            else:
-                # Flow 1: Text RAG search
-                return self._execute_text_search(query, context)
+            # Fallback
+            logger.warning(f"Unknown flow type: {flow_type}, using text search")
+            return self._execute_text_search(query, context)
 
     def _execute_text_search(self, query: str, context: str) -> str:
         """Flow 1: Text-based RAG search"""
         logger.info("Executing Flow 1: Text RAG Search")
+        self.tools_used = []  # Reset tools tracking
 
+        # If there's context, use LLM to create a better search query
+        search_query = query
+        if context and context != "No previous conversation.":
+            self.current_step = "🤔 Understanding context..."
+            self.tools_used.append("Context Understanding")
+            context_prompt = f"""Based on the conversation history and user's request, create a concise search query.
+
+Previous conversation:
+{context}
+
+User's current request: {query}
+
+Create a search query (2-8 words) that captures what the user wants, considering the context.
+For example:
+- If user says "find pants for this shirt" and previous context mentions "black graphic t-shirt", return "white pants casual"
+- If user asks "what about in red?", return the item type from context + "red"
+
+ONLY return the search query, nothing else."""
+
+            query_response = self.llm.invoke(context_prompt)
+            search_query = query_response.content.strip()
+            logger.info(f"Enhanced search query: {search_query}")
+
+        self.current_step = "🔍 Searching for products..."
+        self.tools_used.append("Text Search (RAG)")
         tool = self.tools["search_products"]
-        result = tool._run(query=query, limit=5)
+        result = tool._run(query=search_query, limit=5)
+
+        self.current_step = "✨ Preparing results..."
 
         # Generate natural language response
         prompt = f"""You are a helpful fashion shopping assistant.
@@ -165,10 +203,23 @@ Previous conversation:
 
 User query: {query}
 
-Search results:
+Search results (searched for: "{search_query}"):
 {result}
 
-Based on the search results, provide a friendly response to the user. Present the products clearly and mention key details like color, category, and style."""
+Based on the search results, provide a friendly response to the user.
+
+IMPORTANT: You MUST include ALL product details in your response using this EXACT format for each product:
+
+1. [Product Name]
+   ID: [Product ID Number]
+   Category: [Category details]
+   Color: [Color]
+   Gender: [Gender]
+   Season: [Season if available]
+   Usage: [Usage if available]
+   Relevance: [Relevance percentage if available]
+
+Keep the friendly tone but preserve ALL the product information exactly as provided, especially the ID field."""
 
         response = self.llm.invoke(prompt)
         return response.content
@@ -176,9 +227,13 @@ Based on the search results, provide a friendly response to the user. Present th
     def _execute_visual_search(self, query: str, image_path: str, context: str) -> str:
         """Flow 2: Pure visual search"""
         logger.info("Executing Flow 2: Visual Search")
+        self.tools_used = ["Image Search (CLIP)"]  # Reset and track
 
+        self.current_step = "🖼️ Analyzing image..."
         tool = self.tools["search_by_image"]
         result = tool._run(image_path=image_path, limit=5)
+
+        self.current_step = "✨ Preparing results..."
 
         prompt = f"""You are a helpful fashion shopping assistant.
 
@@ -190,34 +245,89 @@ User uploaded an image and asked: {query}
 Visually similar products found:
 {result}
 
-Present these similar products to the user in a friendly way. Mention the visual similarity scores and key product details."""
+Present these similar products to the user in a friendly way.
+
+IMPORTANT: You MUST include ALL product details in your response using this EXACT format for each product:
+
+1. [Product Name]
+   ID: [Product ID Number]
+   Category: [Category details]
+   Color: [Color]
+   Gender: [Gender]
+   Season: [Season if available]
+   Usage: [Usage if available]
+   Similarity: [Similarity percentage if available]
+
+Keep the friendly tone but preserve ALL the product information exactly as provided, especially the ID field."""
 
         response = self.llm.invoke(prompt)
         return response.content
 
-    def _execute_visual_with_filter(self, query: str, image_path: str, context: str) -> str:
+    def _execute_visual_with_filter(
+        self, query: str, image_path: str, context: str
+    ) -> str:
         """Flow 3: Visual search + attribute filtering"""
         logger.info("Executing Flow 3: Visual Search + Filter")
+        self.tools_used = ["Image Search (CLIP)", "Metadata Filter"]
 
-        # First get visually similar items
-        visual_tool = self.tools["search_by_image"]
-        visual_results = visual_tool._run(image_path=image_path, limit=10)
+        self.current_step = "🖼️ Analyzing image..."
+        visual_tool: ImageSearchTool = self.tools["search_by_image"]  # type: ignore
 
-        # Extract filter criteria from query
-        filter_prompt = f"""Extract filtering criteria from this query: "{query}"
+        try:
+            raw_results = visual_tool.search(image_path=image_path, limit=50)
+        except FileNotFoundError as exc:
+            return f"I could not find the uploaded image: {exc}"
+        except Exception as exc:  # Catch embedding or search issues
+            logger.error(f"Visual search failed: {exc}", exc_info=True)
+            return "I ran into an issue while analyzing the image. Could you try again later?"
 
-Return ONLY a JSON object with these optional fields (omit fields that aren't mentioned):
-- gender (Men/Women/Boys/Girls/Unisex)
-- baseColour (color name)
-- masterCategory (Apparel/Accessories/Footwear)
-- season (Summer/Winter/Fall/Spring)
+        if not raw_results:
+            return "I could not find similar items for that image."
 
-Query: {query}
-JSON:"""
+        self.current_step = "🎯 Applying filters..."
 
-        filter_response = self.llm.invoke(filter_prompt)
-        
-        # For now, just use visual results with LLM filtering
+        filters = self._extract_filters(query)
+        logger.info(f"Extracted filters from query: {filters}")
+
+        filtered_results = self._apply_metadata_filters(raw_results, filters)
+
+        filter_note = ""
+        if not filtered_results:
+            filter_note = "I could not find results that match those specific filters. Here are the closest visual matches instead."
+            filtered_results = raw_results[:5]
+
+        formatted_results = visual_tool._format_results(filtered_results, image_path)  # type: ignore
+
+        response_lines = [
+            "Here are the closest matches based on your image.",
+        ]
+
+        if filters:
+            response_lines.append(
+                "Filters applied: "
+                + ", ".join(f"{key}={value}" for key, value in filters.items())
+            )
+
+        if filter_note:
+            response_lines.append(filter_note)
+
+        response_lines.append("")
+        response_lines.append(formatted_results)
+
+        return "\n".join(line for line in response_lines if line).strip()
+
+    def _execute_vlm_only(self, query: str, image_path: str, context: str) -> str:
+        """VLM analysis only - no product search"""
+        logger.info("Executing VLM Analysis Only")
+        self.tools_used = ["VLM Analysis (GPT-4o-mini)"]  # Only VLM
+
+        self.current_step = "👁️ Analyzing image with AI..."
+        vlm_tool = self.tools["analyze_image_style"]
+        style_analysis = vlm_tool._run(image_path=image_path)
+
+        self.current_step = "✨ Preparing response..."
+
+        # Generate response with only style analysis
         prompt = f"""You are a helpful fashion shopping assistant.
 
 Previous conversation:
@@ -225,25 +335,35 @@ Previous conversation:
 
 User uploaded an image and asked: {query}
 
-Visually similar products found:
-{visual_results}
+Image Analysis:
+{style_analysis}
 
-Filter the results based on the user's additional requirements (e.g., color, gender) and present the best matches."""
+Based on the analysis, provide a friendly and informative response about the style.
+DO NOT recommend products unless the user specifically asked for recommendations.
+Just describe what you see in the image and answer the user's question."""
 
         response = self.llm.invoke(prompt)
         return response.content
 
-    def _execute_vlm_then_search(self, query: str, image_path: str, context: str) -> str:
+    def _execute_vlm_then_search(
+        self, query: str, image_path: str, context: str
+    ) -> str:
         """Flow 4: ReAct Loop - VLM analysis then text search"""
         logger.info("Executing Flow 4: ReAct Loop (VLM -> Text Search)")
+        self.tools_used = [
+            "VLM Analysis (GPT-4o-mini)",
+            "Text Search (RAG)",
+        ]  # Reset and track
 
         # Step 1: Analyze image with VLM
+        self.current_step = "👁️ Analyzing image style with AI..."
         vlm_tool = self.tools["analyze_image_style"]
         style_analysis = vlm_tool._run(image_path=image_path)
 
         logger.info(f"VLM Analysis: {style_analysis}")
 
         # Step 2: Extract search query from analysis and user intent
+        self.current_step = "🔍 Searching based on style..."
         search_prompt = f"""Based on the image analysis and user's request, create a search query.
 
 User request: {query}
@@ -262,6 +382,7 @@ ONLY return the search query, nothing else."""
         search_results = search_tool._run(query=search_query, limit=5)
 
         # Step 4: Generate final response
+        self.current_step = "✨ Preparing results..."
         final_prompt = f"""You are a helpful fashion shopping assistant.
 
 Previous conversation:
@@ -278,30 +399,113 @@ Step 2 - Search Results for "{search_query}":
 Provide a comprehensive response that:
 1. Acknowledges the image style
 2. Presents the search results
-3. Explains how they match the user's request"""
+3. Explains how they match the user's request
+
+IMPORTANT: You MUST include ALL product details in your response using this EXACT format for each product:
+
+1. [Product Name]
+   ID: [Product ID Number]
+   Category: [Category details]
+   Color: [Color]
+   Gender: [Gender]
+   Season: [Season if available]
+   Usage: [Usage if available]
+   Relevance: [Relevance percentage if available]
+
+Keep the friendly tone but preserve ALL the product information exactly as provided, especially the ID field."""
 
         response = self.llm.invoke(final_prompt)
         return response.content
 
-    def _execute_filter(self, query: str, context: str) -> str:
-        """Execute attribute-based filtering"""
-        logger.info("Executing attribute filter")
+    def _extract_filters(self, query: str) -> Dict[str, str]:
+        """Extract structured filters from user query"""
 
-        # Use LLM to extract filter parameters
-        filter_prompt = f"""Extract filter parameters from this query: "{query}"
+        filter_prompt = f"""Extract filtering criteria from this query: "{query}"
 
-Return ONLY a JSON object with these optional fields (omit if not mentioned):
+Return ONLY a JSON object with these optional fields (omit fields that aren't mentioned):
 - gender (Men/Women/Boys/Girls/Unisex)
 - baseColour (color name)
-- masterCategory (Apparel/Accessories/Footwear/Personal Care)
-- subCategory (Topwear/Bottomwear/Shoes/Bags/etc)
+- masterCategory (Apparel/Accessories/Footwear)
 - season (Summer/Winter/Fall/Spring)
 
 Query: {query}
 JSON:"""
 
-        # For simplicity, fallback to text search for now
-        return self._execute_text_search(query, context)
+        try:
+            response = self.llm.invoke(filter_prompt)
+            raw_response = (
+                response.content.strip() if response and response.content else "{}"
+            )
+
+            start = raw_response.find("{")
+            end = raw_response.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                json_text = raw_response[start : end + 1]
+            else:
+                json_text = "{}"
+
+            parsed = json.loads(json_text)
+            if not isinstance(parsed, dict):
+                return {}
+
+            # Normalize values (title case for readability)
+            normalized = {
+                key: str(value).strip() for key, value in parsed.items() if value
+            }
+
+            return normalized
+
+        except Exception as exc:
+            logger.warning(f"Failed to extract filters: {exc}")
+            return {}
+
+    def _apply_metadata_filters(
+        self,
+        results: List[Dict[str, Any]],
+        filters: Dict[str, str],
+        limit: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """Apply metadata filters (case-insensitive) to search results"""
+
+        if not filters:
+            return results[:limit]
+
+        def matches(item: Dict[str, Any]) -> bool:
+            for key, expected in filters.items():
+                mapped_key = self._map_filter_key(key)
+                if not mapped_key:
+                    continue
+                value = item.get(mapped_key)
+                if value is None:
+                    return False
+                if str(value).strip().lower() != expected.strip().lower():
+                    return False
+            return True
+
+        filtered: List[Dict[str, Any]] = []
+        for item in results:
+            if matches(item):
+                filtered.append(item)
+            if len(filtered) >= limit:
+                break
+
+        return filtered
+
+    def _map_filter_key(self, key: str) -> Optional[str]:
+        """Map filter keys from LLM to result metadata keys"""
+
+        mapping = {
+            "gender": "gender",
+            "basecolour": "baseColour",
+            "basecolor": "baseColour",
+            "color": "baseColour",
+            "colour": "baseColour",
+            "mastercategory": "masterCategory",
+            "category": "masterCategory",
+            "season": "season",
+        }
+
+        return mapping.get(key.lower())
 
     def get_conversation_history(self) -> List[Dict[str, str]]:
         """Get conversation history for this session"""

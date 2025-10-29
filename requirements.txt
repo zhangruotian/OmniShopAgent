@@ -20,7 +20,6 @@ pymilvus>=2.3.6
 
 # Databases
 pymongo>=4.6.1
-redis>=5.0.1
 
 # Utilities
 python-dotenv>=1.0.1

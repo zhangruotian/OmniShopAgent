@@ -71,7 +71,9 @@ class AgentOrchestrator:
                 # If there's conversation history, treat as specific search anyway
                 # to allow the agent to use context
                 if conversation_history and len(conversation_history) > 0:
-                    logger.info(f"[{self.session_id}] Has conversation history, treating as specific search")
+                    logger.info(
+                        f"[{self.session_id}] Has conversation history, treating as specific search"
+                    )
                     classification.intent = IntentType.SPECIFIC_SEARCH
                 else:
                     boundary_response = self.boundary_handler.handle(
@@ -94,6 +96,7 @@ class AgentOrchestrator:
                 "response": result["response"],
                 "intent": classification.intent.value,
                 "flow": self._infer_flow(query, image_path),
+                "tools_used": self.shopping_agent.tools_used,  # Include tools used
                 "error": result.get("error", False),
             }
 
@@ -117,8 +120,7 @@ class AgentOrchestrator:
             ):
                 return "flow_4_react"  # VLM analysis
             elif any(
-                word in query_lower
-                for word in ["but", "in", "with", "color", "gender"]
+                word in query_lower for word in ["but", "in", "with", "color", "gender"]
             ):
                 return "flow_3_visual_filter"  # Visual + filter
             else:
@@ -135,4 +137,3 @@ class AgentOrchestrator:
         """Clear conversation history"""
         self.shopping_agent.clear_history()
         logger.info(f"[{self.session_id}] History cleared")
-

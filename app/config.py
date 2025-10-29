@@ -4,7 +4,6 @@ Loads environment variables and provides configuration objects
 """
 
 import os
-from typing import Optional
 
 from pydantic_settings import BaseSettings
 
@@ -24,13 +23,6 @@ class Settings(BaseSettings):
 
     # CLIP Server Configuration
     clip_server_url: str = "grpc://localhost:51000"
-
-    # Redis Configuration
-    redis_host: str = "localhost"
-    redis_port: int = 6379
-    redis_db: int = 0
-    redis_password: Optional[str] = None
-    session_ttl: int = 3600
 
     # Milvus Configuration
     milvus_uri: str = "http://localhost:19530"

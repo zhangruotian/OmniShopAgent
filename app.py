@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageOps
 
 from app.agents.orchestrator import AgentOrchestrator
 
@@ -38,18 +38,31 @@ st.markdown(
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Main container */
-    .main {
+    /* Body and root container */
+    .main .block-container {
+        padding-bottom: 180px !important;
         padding-top: 2rem;
         max-width: 900px;
         margin: 0 auto;
     }
     
-    /* Chat container */
-    .chat-container {
+    /* Fixed input container at bottom */
+    .fixed-input-container {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: white;
+        border-top: 1px solid #e5e5e5;
         padding: 1rem 0;
-        max-height: calc(100vh - 200px);
-        overflow-y: auto;
+        z-index: 1000;
+        box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+    }
+    
+    .fixed-input-container .block-container {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 0 1rem !important;
     }
     
     /* Message bubbles */
@@ -66,8 +79,10 @@ st.markdown(
     }
     
     .user-message {
-        background: #f7f7f8;
-        margin-left: 3rem;
+        background: transparent;
+        margin: 0 0 1rem 0;
+        padding: 0;
+        border-radius: 0;
     }
     
     .assistant-message {
@@ -76,60 +91,23 @@ st.markdown(
         margin-right: 3rem;
     }
     
-    /* Product cards */
-    .product-card {
-        background: white;
-        border: 1px solid #e5e5e5;
-        border-radius: 12px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-        transition: all 0.2s;
+    /* Product cards - simplified */
+    .stImage {
+        border-radius: 0px;
+        overflow: hidden;
     }
     
-    .product-card:hover {
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        transform: translateY(-2px);
+    .stImage img {
+        transition: transform 0.2s;
     }
     
-    .product-image {
-        width: 100%;
-        border-radius: 8px;
-        margin-bottom: 0.5rem;
+    .stImage:hover img {
+        transform: scale(1.05);
     }
     
-    .product-name {
-        font-weight: 600;
-        font-size: 1rem;
-        margin: 0.5rem 0;
-        color: #1a1a1a;
-    }
-    
-    .product-info {
-        font-size: 0.85rem;
-        color: #666;
-        line-height: 1.4;
-    }
-    
-    .product-badge {
-        display: inline-block;
-        padding: 0.25rem 0.5rem;
-        background: #f0f0f0;
-        border-radius: 4px;
-        font-size: 0.75rem;
-        margin-right: 0.25rem;
-        margin-top: 0.25rem;
-    }
-    
-    /* Input area */
-    .input-container {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        background: white;
-        border-top: 1px solid #e5e5e5;
-        padding: 1rem;
-        z-index: 1000;
+    /* Scroll to bottom behavior */
+    html {
+        scroll-behavior: smooth;
     }
     
     /* Header */
@@ -365,55 +343,33 @@ def extract_products_from_response(response: str) -> list:
 
 
 def display_product_card(product: dict):
-    """Display a product card with image"""
+    """Display a product card with image and name only"""
     product_id = product.get("id", "")
     name = product.get("name", "Unknown Product")
-    category = product.get("category", "")
-    color = product.get("color", "")
-    gender = product.get("gender", "")
-    season = product.get("season", "")
-    usage = product.get("usage", "")
-    score = product.get("score", "")
-
-    # Construct image URL
-    image_url = (
-        f"http://localhost:8000/static/images/{product_id}.jpg" if product_id else None
-    )
 
     # Try to load image from data/images directory
     image_path = Path(f"data/images/{product_id}.jpg")
 
-    col1, col2 = st.columns([1, 2])
-
-    with col1:
+    # Create a compact card layout
+    with st.container():
         if image_path.exists():
             try:
                 img = Image.open(image_path)
-                st.image(img, use_container_width=True)
-            except:
-                st.write("📷")
+                target_size = (180, 180)
+                try:
+                    img_processed = ImageOps.fit(img, target_size, method=Image.LANCZOS)
+                except Exception:
+                    img_processed = img.resize(target_size, Image.LANCZOS)
+
+                st.image(img_processed, width=180, caption=name)
+            except Exception:
+                logger.warning(f"Failed to load image {image_path}")
+                st.markdown(f"**📷 {name}**")
+                st.caption(f"ID: {product_id}")
         else:
-            st.write("📷")
-
-    with col2:
-        st.markdown(f"**{name}**")
-        if category:
-            st.caption(category)
-
-        badges = []
-        if color:
-            badges.append(f"🎨 {color}")
-        if gender:
-            badges.append(f"👤 {gender}")
-        if season:
-            badges.append(f"🌤️ {season}")
-        if usage:
-            badges.append(f"🏷️ {usage}")
-        if score:
-            badges.append(f"⭐ {score}%")
-
-        if badges:
-            st.caption(" • ".join(badges))
+            logger.warning(f"Image not found: {image_path}")
+            st.markdown(f"**📷 {name}**")
+            st.caption(f"ID: {product_id}")
 
 
 def display_message(message: dict):
@@ -421,6 +377,7 @@ def display_message(message: dict):
     role = message["role"]
     content = message["content"]
     image_path = message.get("image_path")
+    tools_used = message.get("tools_used", [])
 
     if role == "user":
         st.markdown('<div class="message user-message">', unsafe_allow_html=True)
@@ -429,19 +386,42 @@ def display_message(message: dict):
             try:
                 img = Image.open(image_path)
                 st.image(img, width=200)
-            except:
-                pass
+            except Exception:
+                logger.warning(f"Failed to load user uploaded image: {image_path}")
 
         st.markdown(content)
         st.markdown("</div>", unsafe_allow_html=True)
 
     else:  # assistant
-        st.markdown('<div class="message assistant-message">', unsafe_allow_html=True)
+        # Display tools used (debug info)
+        if tools_used:
+            tools_badges = " ".join(
+                [
+                    f'<span style="background: #e3f2fd; color: #1976d2; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; margin-right: 0.25rem;">🔧 {tool}</span>'
+                    for tool in tools_used
+                ]
+            )
+            st.markdown(
+                f'<div style="margin-bottom: 0.5rem;">{tools_badges}</div>',
+                unsafe_allow_html=True,
+            )
 
         # Extract and display products if any
         products = extract_products_from_response(content)
 
         if products:
+
+            def parse_score(product: dict) -> float:
+                score = product.get("score")
+                if score is None:
+                    return 0.0
+                try:
+                    return float(score)
+                except (TypeError, ValueError):
+                    return 0.0
+
+            products = sorted(products, key=parse_score, reverse=True)[:3]
+
             # Display the text response first (without product details)
             text_lines = []
             for line in content.split("\n"):
@@ -466,11 +446,16 @@ def display_message(message: dict):
             if intro_text:
                 st.markdown(intro_text)
 
-            # Display product cards
-            st.markdown("---")
-            for product in products:
-                display_product_card(product)
-                st.markdown("")  # Spacing
+            # Display product cards in grid (no separator)
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # Create 3-column grid for products
+            cols_per_row = 3
+            for i in range(0, len(products), cols_per_row):
+                cols = st.columns(cols_per_row)
+                for j, product in enumerate(products[i : i + cols_per_row]):
+                    with cols[j]:
+                        display_product_card(product)
         else:
             # No products found, display full content
             st.markdown(content)
@@ -480,17 +465,6 @@ def display_message(message: dict):
 
 def display_welcome():
     """Display welcome screen"""
-    st.markdown(
-        """
-        <div class="welcome-container">
-            <div class="welcome-title">👗 Welcome to OmniShopAgent</div>
-            <p style="font-size: 1.1rem; margin: 1rem 0;">
-                Your AI-powered fashion shopping assistant
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
     col1, col2, col3, col4 = st.columns(4)
 
@@ -543,9 +517,6 @@ def display_welcome():
         )
 
     st.markdown("<br><br>", unsafe_allow_html=True)
-    st.info(
-        "💡 **Tip**: Type your question below, or click the ➕ button to add an image!"
-    )
 
 
 def main():
@@ -568,7 +539,8 @@ def main():
         st.markdown("### ⚙️ Settings")
 
         if st.button("🗑️ Clear Chat", use_container_width=True):
-            st.session_state.orchestrator.clear_history()
+            if "orchestrator" in st.session_state:
+                st.session_state.orchestrator.shopping_agent.chat_history.clear()
             st.session_state.messages = []
             st.session_state.uploaded_image = None
             st.rerun()
@@ -576,59 +548,95 @@ def main():
         st.markdown("---")
         st.caption(f"Session: `{st.session_state.session_id[:8]}...`")
 
-    # Chat messages
-    if not st.session_state.messages:
-        display_welcome()
-    else:
-        for message in st.session_state.messages:
-            display_message(message)
+    # Chat messages container
+    messages_container = st.container()
 
-    # Add some spacing before input
-    st.markdown("<br>" * 2, unsafe_allow_html=True)
+    with messages_container:
+        if not st.session_state.messages:
+            display_welcome()
+        else:
+            for message in st.session_state.messages:
+                display_message(message)
 
-    # Input area
-    col1, col2 = st.columns([1, 12])
+    # Fixed input area at bottom (using container to simulate fixed position)
+    st.markdown('<div class="fixed-input-container">', unsafe_allow_html=True)
 
-    with col1:
-        # Image upload toggle button
-        if st.button("➕", help="Add image", use_container_width=True):
-            st.session_state.show_image_upload = not st.session_state.show_image_upload
-            st.rerun()
+    input_container = st.container()
 
-    with col2:
-        # Text input
-        user_query = st.chat_input(
-            "Ask about fashion products...",
-            key="chat_input",
-        )
+    with input_container:
+        # Image upload area (shown when + is clicked)
+        if st.session_state.show_image_upload:
+            uploaded_file = st.file_uploader(
+                "Choose an image",
+                type=["jpg", "jpeg", "png"],
+                key="file_uploader",
+            )
 
-    # Image upload area (shown when + is clicked)
-    if st.session_state.show_image_upload:
-        uploaded_file = st.file_uploader(
-            "Choose an image",
-            type=["jpg", "jpeg", "png"],
-            key="file_uploader",
-        )
+            if uploaded_file:
+                st.session_state.uploaded_image = uploaded_file
+                # Show preview
+                col1, col2 = st.columns([1, 4])
+                with col1:
+                    img = Image.open(uploaded_file)
+                    st.image(img, width=100)
+                with col2:
+                    if st.button("❌ Remove"):
+                        st.session_state.uploaded_image = None
+                        st.session_state.show_image_upload = False
+                        st.rerun()
 
-        if uploaded_file:
-            st.session_state.uploaded_image = uploaded_file
-            # Show preview
-            col1, col2 = st.columns([1, 4])
-            with col1:
-                img = Image.open(uploaded_file)
-                st.image(img, width=150)
-            with col2:
-                if st.button("❌ Remove"):
-                    st.session_state.uploaded_image = None
-                    st.session_state.show_image_upload = False
-                    st.rerun()
+        # Input row
+        col1, col2 = st.columns([1, 12])
+
+        with col1:
+            # Image upload toggle button
+            if st.button("➕", help="Add image", use_container_width=True):
+                st.session_state.show_image_upload = (
+                    not st.session_state.show_image_upload
+                )
+                st.rerun()
+
+        with col2:
+            # Text input
+            user_query = st.chat_input(
+                "Ask about fashion products...",
+                key="chat_input",
+            )
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
     # Process user input
     if user_query:
-        # Save uploaded image if present
+        # Ensure orchestrator is initialized
+        if "orchestrator" not in st.session_state:
+            st.error("Session not initialized. Please refresh the page.")
+            st.stop()
+
+        # Save uploaded image if present, or get from recent history
         image_path = None
         if st.session_state.uploaded_image:
+            # User explicitly uploaded an image for this query
             image_path = save_uploaded_image(st.session_state.uploaded_image)
+        else:
+            # Check if query refers to a previous image
+            query_lower = user_query.lower()
+            if any(
+                ref in query_lower
+                for ref in [
+                    "this",
+                    "that",
+                    "the image",
+                    "the shirt",
+                    "the product",
+                    "it",
+                ]
+            ):
+                # Find the most recent message with an image
+                for msg in reversed(st.session_state.messages):
+                    if msg.get("role") == "user" and msg.get("image_path"):
+                        image_path = msg["image_path"]
+                        logger.info(f"Using image from previous message: {image_path}")
+                        break
 
         # Add user message
         st.session_state.messages.append(
@@ -640,40 +648,102 @@ def main():
         )
 
         # Display user message immediately
-        display_message(st.session_state.messages[-1])
+        with messages_container:
+            display_message(st.session_state.messages[-1])
 
         # Process with orchestrator
-        with st.spinner("🤔 Thinking..."):
-            try:
-                result = st.session_state.orchestrator.process_query(
-                    query=user_query,
-                    image_path=image_path,
-                )
+        # Create a placeholder for thinking steps
+        thinking_container = st.empty()
 
-                response = result["response"]
+        try:
+            # Show dynamic thinking steps
+            agent = st.session_state.orchestrator.shopping_agent
+            # Save orchestrator to local variable (can't access session_state in thread)
+            orchestrator = st.session_state.orchestrator
 
-                # Add assistant message
-                st.session_state.messages.append(
-                    {
-                        "role": "assistant",
-                        "content": response,
-                    }
-                )
+            # Show initial thinking message
+            with thinking_container.container():
+                st.markdown("💭 **Thinking...**")
 
-                # Clear uploaded image and hide upload area
-                st.session_state.uploaded_image = None
-                st.session_state.show_image_upload = False
+            # Process in background while monitoring steps
+            import threading
+            import time
 
-            except Exception as e:
-                logger.error(f"Error processing query: {e}", exc_info=True)
-                error_msg = f"I apologize, I encountered an error: {str(e)}"
+            result = [None]
+            error = [None]
 
-                st.session_state.messages.append(
-                    {
-                        "role": "assistant",
-                        "content": error_msg,
-                    }
-                )
+            def process_query():
+                try:
+                    result[0] = orchestrator.process_query(
+                        query=user_query,
+                        image_path=image_path,
+                    )
+                except Exception as e:
+                    error[0] = e
+
+            # Start processing thread
+            thread = threading.Thread(target=process_query)
+            thread.start()
+
+            # Monitor and display steps
+            last_step = ""
+            while thread.is_alive():
+                current_step = getattr(agent, "current_step", "")
+                if current_step and current_step != last_step:
+                    with thinking_container.container():
+                        st.markdown("💭 **Thinking...**")
+                        st.markdown(f"_{current_step}_")
+                    last_step = current_step
+                time.sleep(0.1)
+
+            thread.join()
+
+            # Clear thinking container
+            thinking_container.empty()
+
+            # Check for errors
+            if error[0]:
+                raise error[0]
+
+            if result[0] is None:
+                raise Exception("No result returned from query processing")
+
+            response = result[0]["response"]
+            tools_used = result[0].get("tools_used", [])
+
+            # Add assistant message
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": response,
+                    "tools_used": tools_used,
+                }
+            )
+
+            # Clear uploaded image and hide upload area after sending
+            st.session_state.uploaded_image = None
+            st.session_state.show_image_upload = False
+
+            # Auto-scroll to bottom with JavaScript
+            st.markdown(
+                """
+                <script>
+                window.scrollTo(0, document.body.scrollHeight);
+                </script>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing query: {e}", exc_info=True)
+            error_msg = f"I apologize, I encountered an error: {str(e)}"
+
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": error_msg,
+                }
+            )
 
         # Rerun to update UI
         st.rerun()
