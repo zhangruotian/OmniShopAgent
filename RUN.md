@@ -24,13 +24,27 @@ MILVUS_URI=http://localhost:19530  # For Milvus Standalone
 
 ## Run the Streamlit UI
 
+**Method 1 (Recommended): Use the startup script**
+```bash
+cd /Users/zhangruotian/Documents/OmniShopAgent
+./run_app.sh
+```
+
+**Method 2: Manual activation**
 ```bash
 cd /Users/zhangruotian/Documents/OmniShopAgent
 source venv/bin/activate
-streamlit run app.py
+python -m streamlit run app.py
+```
+
+**Method 3: Direct path (if venv not activated)**
+```bash
+/Users/zhangruotian/Documents/OmniShopAgent/venv/bin/streamlit run app.py
 ```
 
 The app will open in your browser at `http://localhost:8501`
+
+> **Note**: Always use `python -m streamlit` or the startup script to ensure the correct virtual environment is used.
 
 ## Features
 
