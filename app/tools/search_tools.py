@@ -84,6 +84,10 @@ class ProductSearchTool(BaseTool):
         try:
             logger.info(f"Searching products with query: '{query}', limit: {limit}")
 
+            # Ensure Milvus is connected
+            if not self.milvus_service.is_connected():
+                self.milvus_service.connect()
+
             # Generate text embedding for query
             query_embedding = self.embedding_service.get_text_embedding(query)
 
@@ -200,7 +204,7 @@ class FilterProductsTool(BaseTool):
         super().__init__(**data)
         if self.milvus_service is None:
             self.milvus_service = MilvusService()
-            self.milvus_service.connect()
+            # Delay connection until actual use
 
     def _run(
         self,

@@ -4,9 +4,9 @@ Multi-modal fashion shopping assistant with conversational AI
 """
 
 import logging
+import uuid
 from pathlib import Path
 from typing import Optional
-import uuid
 
 import streamlit as st
 from PIL import Image
@@ -142,7 +142,9 @@ def display_chat_message(role: str, content: str, image_path: Optional[str] = No
         cols = st.columns([0.1, 0.9])
 
         with cols[0]:
-            st.markdown(f'<div class="message-avatar">{avatar}</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="message-avatar">{avatar}</div>', unsafe_allow_html=True
+            )
 
         with cols[1]:
             if image_path and role == "user":
@@ -190,19 +192,22 @@ def main():
 
         # Features
         st.markdown("### ✨ Features")
-        st.markdown("""
+        st.markdown(
+            """
         - 💬 **Text Search**: Describe what you want
         - 🖼️ **Image Search**: Upload product images
         - 🔍 **Visual Analysis**: AI analyzes image style
         - 🎯 **Smart Filtering**: Filter by color, gender, etc.
         - 💭 **Conversational**: Remembers context
-        """)
+        """
+        )
 
         st.markdown("---")
 
         # Examples
         st.markdown("### 💡 Example Queries")
-        st.markdown("""
+        st.markdown(
+            """
         **Text Queries:**
         - "Show me blue casual shirts for men"
         - "Find red summer dresses"
@@ -212,13 +217,15 @@ def main():
         - Upload image + "Find similar items"
         - Upload image + "Find this style but in red"
         - Upload image + "Analyze this product style"
-        """)
+        """
+        )
 
         st.markdown("---")
 
         # About
         with st.expander("ℹ️ About"):
-            st.markdown("""
+            st.markdown(
+                """
             **OmniShopAgent** combines:
             - 🤖 GPT-4o-mini for reasoning
             - 🔤 OpenAI text embeddings
@@ -226,7 +233,8 @@ def main():
             - 📊 Milvus vector database
 
             Built with LangChain, FastAPI, and Streamlit.
-            """)
+            """
+            )
 
     # Main chat interface
     st.markdown("### 💬 Chat with Your Fashion Assistant")
@@ -285,11 +293,13 @@ def main():
             image_path = save_uploaded_image(st.session_state.uploaded_image)
 
         # Add user message to history
-        st.session_state.messages.append({
-            "role": "user",
-            "content": user_query,
-            "image_path": image_path,
-        })
+        st.session_state.messages.append(
+            {
+                "role": "user",
+                "content": user_query,
+                "image_path": image_path,
+            }
+        )
 
         # Display user message
         display_chat_message("user", user_query, image_path)
@@ -307,21 +317,25 @@ def main():
                 flow = result.get("flow", "unknown")
 
                 # Add assistant message to history
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": response,
-                })
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": response,
+                    }
+                )
 
                 # Display assistant message
                 display_chat_message("assistant", response)
 
                 # Show metadata in expander
                 with st.expander("🔍 Debug Info"):
-                    st.json({
-                        "intent": intent,
-                        "flow": flow,
-                        "has_image": bool(image_path),
-                    })
+                    st.json(
+                        {
+                            "intent": intent,
+                            "flow": flow,
+                            "has_image": bool(image_path),
+                        }
+                    )
 
                 # Clear uploaded image after processing
                 st.session_state.uploaded_image = None
@@ -330,10 +344,12 @@ def main():
                 logger.error(f"Error processing query: {e}", exc_info=True)
                 error_msg = f"I apologize, I encountered an error: {str(e)}"
 
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": error_msg,
-                })
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": error_msg,
+                    }
+                )
 
                 display_chat_message("assistant", error_msg)
 
@@ -342,7 +358,8 @@ def main():
 
     # Welcome message
     if not st.session_state.messages:
-        st.markdown("""
+        st.markdown(
+            """
         <div style="text-align: center; padding: 3rem; color: #666;">
             <h2>👋 Welcome to OmniShopAgent!</h2>
             <p>I'm your AI fashion shopping assistant. I can help you:</p>
@@ -354,9 +371,10 @@ def main():
             </ul>
             <p style="margin-top: 2rem;"><strong>Start by typing a message or uploading an image below!</strong></p>
         </div>
-        """, unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
 
 
 if __name__ == "__main__":
     main()
-

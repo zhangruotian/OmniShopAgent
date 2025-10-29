@@ -40,8 +40,14 @@ class MilvusService:
 
         logger.info(f"Initializing Milvus service with URI: {self.uri}")
 
+    def is_connected(self) -> bool:
+        """Check if connected to Milvus"""
+        return self._client is not None
+
     def connect(self) -> None:
         """Connect to Milvus"""
+        if self.is_connected():
+            return
         try:
             self._client = MilvusClient(uri=self.uri)
             logger.info(f"Connected to Milvus at {self.uri}")
