@@ -11,7 +11,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables
-    
+
     All settings can be configured via .env file or environment variables.
     """
 
@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     session_ttl: int = 3600
 
     # Milvus Configuration
-    milvus_uri: str = "./data/milvus_lite.db"
+    milvus_uri: str = "http://localhost:19530"
     milvus_host: str = "localhost"
     milvus_port: int = 19530
     text_collection_name: str = "text_embeddings"
