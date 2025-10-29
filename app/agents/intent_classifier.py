@@ -45,13 +45,14 @@ class IntentClassifier:
         self.model = settings.openai_model
 
     def classify(
-        self, query: str, has_image: bool = False
+        self, query: str, has_image: bool = False, conversation_history: list = None
     ) -> IntentClassification:
         """Classify user query intent
 
         Args:
             query: User's text query
             has_image: Whether user uploaded an image
+            conversation_history: List of previous messages for context
 
         Returns:
             IntentClassification with intent type and reasoning
@@ -59,7 +60,7 @@ class IntentClassifier:
         try:
             logger.info(f"Classifying intent for query: '{query}' (has_image={has_image})")
 
-            prompt = self._build_classification_prompt(query, has_image)
+            prompt = self._build_classification_prompt(query, has_image, conversation_history)
 
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -89,7 +90,7 @@ class IntentClassifier:
                 reasoning="Error during classification, defaulting to search",
             )
 
-    def _build_classification_prompt(self, query: str, has_image: bool) -> str:
+    def _build_classification_prompt(self, query: str, has_image: bool, conversation_history: list = None) -> str:
         """Build prompt for intent classification"""
         image_context = (
             "\n- User has uploaded an image with their query"
@@ -97,13 +98,27 @@ class IntentClassifier:
             else "\n- User has NOT uploaded any image"
         )
 
+        # Build conversation context
+        history_context = ""
+        if conversation_history and len(conversation_history) > 0:
+            history_context = "\n\nPrevious conversation (last 3 exchanges):\n"
+            # Get last 6 messages (3 exchanges)
+            recent_messages = conversation_history[-6:]
+            for msg in recent_messages:
+                role = msg.get('role', 'unknown')
+                content = msg.get('content', '')[:150]  # Truncate long messages
+                history_context += f"{role.upper()}: {content}\n"
+            history_context += "\nIMPORTANT: Consider this conversation history when classifying. If the current query refers to something from previous context (like 'this', 'that', 'matching', 'similar style'), it should be classified as SPECIFIC_SEARCH, not TOO_VAGUE."
+
         return f"""You are an intent classifier for a fashion e-commerce assistant.
 Classify the user's query into ONE of these categories:
 
 1. SPECIFIC_SEARCH: User wants to search for fashion products with clear intent
    Examples: "red dress", "running shoes for men", "find similar to this image"
+   ALSO INCLUDES: Follow-up queries that reference previous conversation
+   Examples: "what about in blue?", "find matching shoes", "similar but for women"
    
-2. TOO_VAGUE: Query is too vague and needs clarification
+2. TOO_VAGUE: Query is too vague and needs clarification (ONLY if no conversation context)
    Examples: "recommend something", "I want to buy something", "show me products"
    
 3. OUT_OF_SCOPE: Query is not about fashion products
@@ -112,9 +127,9 @@ Classify the user's query into ONE of these categories:
 4. CHITCHAT: Greetings, thanks, casual conversation
    Examples: "hello", "thank you", "how are you", "bye"
 
-Context:{image_context}
+Context:{image_context}{history_context}
 
-User Query: "{query}"
+Current User Query: "{query}"
 
 Respond ONLY with the category name and brief reasoning in this format:
 CATEGORY: <category_name>

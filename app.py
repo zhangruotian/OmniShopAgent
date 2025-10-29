@@ -3,7 +3,6 @@ OmniShopAgent - Streamlit UI
 Multi-modal fashion shopping assistant with conversational AI
 """
 
-import json
 import logging
 import re
 import uuid
@@ -293,97 +292,99 @@ def save_uploaded_image(uploaded_file) -> Optional[str]:
 
 def extract_products_from_response(response: str) -> list:
     """Extract product information from agent response
-    
+
     Returns list of dicts with product info
     """
     products = []
-    
+
     # Pattern to match product blocks in the response
     # Looking for ID, name, and other details
-    lines = response.split('\n')
+    lines = response.split("\n")
     current_product = {}
-    
+
     for line in lines:
         line = line.strip()
-        
+
         # Match product number (e.g., "1. Product Name" or "**1. Product Name**")
-        if re.match(r'^\*?\*?\d+\.\s+', line):
+        if re.match(r"^\*?\*?\d+\.\s+", line):
             if current_product:
                 products.append(current_product)
             current_product = {}
             # Extract product name
-            name = re.sub(r'^\*?\*?\d+\.\s+', '', line)
-            name = name.replace('**', '').strip()
-            current_product['name'] = name
-            
+            name = re.sub(r"^\*?\*?\d+\.\s+", "", line)
+            name = name.replace("**", "").strip()
+            current_product["name"] = name
+
         # Match ID
-        elif 'ID:' in line or 'id:' in line:
-            id_match = re.search(r'(?:ID|id):\s*(\d+)', line)
+        elif "ID:" in line or "id:" in line:
+            id_match = re.search(r"(?:ID|id):\s*(\d+)", line)
             if id_match:
-                current_product['id'] = id_match.group(1)
-                
+                current_product["id"] = id_match.group(1)
+
         # Match Category
-        elif 'Category:' in line:
-            cat_match = re.search(r'Category:\s*(.+?)(?:\n|$)', line)
+        elif "Category:" in line:
+            cat_match = re.search(r"Category:\s*(.+?)(?:\n|$)", line)
             if cat_match:
-                current_product['category'] = cat_match.group(1).strip()
-                
+                current_product["category"] = cat_match.group(1).strip()
+
         # Match Color
-        elif 'Color:' in line:
-            color_match = re.search(r'Color:\s*(\w+)', line)
+        elif "Color:" in line:
+            color_match = re.search(r"Color:\s*(\w+)", line)
             if color_match:
-                current_product['color'] = color_match.group(1)
-                
+                current_product["color"] = color_match.group(1)
+
         # Match Gender
-        elif 'Gender:' in line:
-            gender_match = re.search(r'Gender:\s*(\w+)', line)
+        elif "Gender:" in line:
+            gender_match = re.search(r"Gender:\s*(\w+)", line)
             if gender_match:
-                current_product['gender'] = gender_match.group(1)
-                
-        # Match Season  
-        elif 'Season:' in line:
-            season_match = re.search(r'Season:\s*(\w+)', line)
+                current_product["gender"] = gender_match.group(1)
+
+        # Match Season
+        elif "Season:" in line:
+            season_match = re.search(r"Season:\s*(\w+)", line)
             if season_match:
-                current_product['season'] = season_match.group(1)
-                
+                current_product["season"] = season_match.group(1)
+
         # Match Usage
-        elif 'Usage:' in line:
-            usage_match = re.search(r'Usage:\s*(\w+)', line)
+        elif "Usage:" in line:
+            usage_match = re.search(r"Usage:\s*(\w+)", line)
             if usage_match:
-                current_product['usage'] = usage_match.group(1)
-                
+                current_product["usage"] = usage_match.group(1)
+
         # Match Similarity/Relevance score
-        elif 'Similarity:' in line or 'Relevance:' in line:
-            score_match = re.search(r'(?:Similarity|Relevance):\s*([\d.]+)%', line)
+        elif "Similarity:" in line or "Relevance:" in line:
+            score_match = re.search(r"(?:Similarity|Relevance):\s*([\d.]+)%", line)
             if score_match:
-                current_product['score'] = score_match.group(1)
-    
+                current_product["score"] = score_match.group(1)
+
     # Add last product
     if current_product:
         products.append(current_product)
-    
+
     return products
 
 
 def display_product_card(product: dict):
     """Display a product card with image"""
-    product_id = product.get('id', '')
-    name = product.get('name', 'Unknown Product')
-    category = product.get('category', '')
-    color = product.get('color', '')
-    gender = product.get('gender', '')
-    season = product.get('season', '')
-    usage = product.get('usage', '')
-    score = product.get('score', '')
-    
+    product_id = product.get("id", "")
+    name = product.get("name", "Unknown Product")
+    category = product.get("category", "")
+    color = product.get("color", "")
+    gender = product.get("gender", "")
+    season = product.get("season", "")
+    usage = product.get("usage", "")
+    score = product.get("score", "")
+
     # Construct image URL
-    image_url = f"http://localhost:8000/static/images/{product_id}.jpg" if product_id else None
-    
+    image_url = (
+        f"http://localhost:8000/static/images/{product_id}.jpg" if product_id else None
+    )
+
     # Try to load image from data/images directory
     image_path = Path(f"data/images/{product_id}.jpg")
-    
+
     col1, col2 = st.columns([1, 2])
-    
+
     with col1:
         if image_path.exists():
             try:
@@ -393,12 +394,12 @@ def display_product_card(product: dict):
                 st.write("📷")
         else:
             st.write("📷")
-    
+
     with col2:
         st.markdown(f"**{name}**")
         if category:
             st.caption(category)
-        
+
         badges = []
         if color:
             badges.append(f"🎨 {color}")
@@ -410,7 +411,7 @@ def display_product_card(product: dict):
             badges.append(f"🏷️ {usage}")
         if score:
             badges.append(f"⭐ {score}%")
-            
+
         if badges:
             st.caption(" • ".join(badges))
 
@@ -420,39 +421,51 @@ def display_message(message: dict):
     role = message["role"]
     content = message["content"]
     image_path = message.get("image_path")
-    
+
     if role == "user":
         st.markdown('<div class="message user-message">', unsafe_allow_html=True)
-        
+
         if image_path and Path(image_path).exists():
             try:
                 img = Image.open(image_path)
                 st.image(img, width=200)
             except:
                 pass
-        
+
         st.markdown(content)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
+        st.markdown("</div>", unsafe_allow_html=True)
+
     else:  # assistant
         st.markdown('<div class="message assistant-message">', unsafe_allow_html=True)
-        
+
         # Extract and display products if any
         products = extract_products_from_response(content)
-        
+
         if products:
             # Display the text response first (without product details)
             text_lines = []
-            for line in content.split('\n'):
+            for line in content.split("\n"):
                 # Skip product detail lines
-                if not any(keyword in line for keyword in ['ID:', 'Category:', 'Color:', 'Gender:', 'Season:', 'Usage:', 'Similarity:', 'Relevance:']):
-                    if not re.match(r'^\*?\*?\d+\.\s+', line):
+                if not any(
+                    keyword in line
+                    for keyword in [
+                        "ID:",
+                        "Category:",
+                        "Color:",
+                        "Gender:",
+                        "Season:",
+                        "Usage:",
+                        "Similarity:",
+                        "Relevance:",
+                    ]
+                ):
+                    if not re.match(r"^\*?\*?\d+\.\s+", line):
                         text_lines.append(line)
-            
-            intro_text = '\n'.join(text_lines).strip()
+
+            intro_text = "\n".join(text_lines).strip()
             if intro_text:
                 st.markdown(intro_text)
-            
+
             # Display product cards
             st.markdown("---")
             for product in products:
@@ -461,8 +474,8 @@ def display_message(message: dict):
         else:
             # No products found, display full content
             st.markdown(content)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
 def display_welcome():
@@ -478,9 +491,9 @@ def display_welcome():
         """,
         unsafe_allow_html=True,
     )
-    
+
     col1, col2, col3, col4 = st.columns(4)
-    
+
     with col1:
         st.markdown(
             """
@@ -492,7 +505,7 @@ def display_welcome():
             """,
             unsafe_allow_html=True,
         )
-    
+
     with col2:
         st.markdown(
             """
@@ -504,7 +517,7 @@ def display_welcome():
             """,
             unsafe_allow_html=True,
         )
-    
+
     with col3:
         st.markdown(
             """
@@ -516,7 +529,7 @@ def display_welcome():
             """,
             unsafe_allow_html=True,
         )
-    
+
     with col4:
         st.markdown(
             """
@@ -528,9 +541,11 @@ def display_welcome():
             """,
             unsafe_allow_html=True,
         )
-    
+
     st.markdown("<br><br>", unsafe_allow_html=True)
-    st.info("💡 **Tip**: Type your question below, or click the ➕ button to add an image!")
+    st.info(
+        "💡 **Tip**: Type your question below, or click the ➕ button to add an image!"
+    )
 
 
 def main():
@@ -551,13 +566,13 @@ def main():
     # Sidebar (collapsed by default, but accessible)
     with st.sidebar:
         st.markdown("### ⚙️ Settings")
-        
+
         if st.button("🗑️ Clear Chat", use_container_width=True):
             st.session_state.orchestrator.clear_history()
             st.session_state.messages = []
             st.session_state.uploaded_image = None
             st.rerun()
-        
+
         st.markdown("---")
         st.caption(f"Session: `{st.session_state.session_id[:8]}...`")
 
@@ -573,13 +588,13 @@ def main():
 
     # Input area
     col1, col2 = st.columns([1, 12])
-    
+
     with col1:
         # Image upload toggle button
         if st.button("➕", help="Add image", use_container_width=True):
             st.session_state.show_image_upload = not st.session_state.show_image_upload
             st.rerun()
-    
+
     with col2:
         # Text input
         user_query = st.chat_input(
@@ -594,7 +609,7 @@ def main():
             type=["jpg", "jpeg", "png"],
             key="file_uploader",
         )
-        
+
         if uploaded_file:
             st.session_state.uploaded_image = uploaded_file
             # Show preview
@@ -616,11 +631,13 @@ def main():
             image_path = save_uploaded_image(st.session_state.uploaded_image)
 
         # Add user message
-        st.session_state.messages.append({
-            "role": "user",
-            "content": user_query,
-            "image_path": image_path,
-        })
+        st.session_state.messages.append(
+            {
+                "role": "user",
+                "content": user_query,
+                "image_path": image_path,
+            }
+        )
 
         # Display user message immediately
         display_message(st.session_state.messages[-1])
@@ -636,10 +653,12 @@ def main():
                 response = result["response"]
 
                 # Add assistant message
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": response,
-                })
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": response,
+                    }
+                )
 
                 # Clear uploaded image and hide upload area
                 st.session_state.uploaded_image = None
@@ -649,10 +668,12 @@ def main():
                 logger.error(f"Error processing query: {e}", exc_info=True)
                 error_msg = f"I apologize, I encountered an error: {str(e)}"
 
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": error_msg,
-                })
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": error_msg,
+                    }
+                )
 
         # Rerun to update UI
         st.rerun()

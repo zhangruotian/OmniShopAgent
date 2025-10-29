@@ -51,10 +51,14 @@ class AgentOrchestrator:
         try:
             logger.info(f"[{self.session_id}] Processing query: '{query}'")
 
-            # Flow 0: Intent Classification
+            # Get conversation history for context
+            conversation_history = self.shopping_agent.get_conversation_history()
+
+            # Flow 0: Intent Classification (with conversation context)
             classification = self.intent_classifier.classify(
                 query=query,
                 has_image=bool(image_path),
+                conversation_history=conversation_history,
             )
 
             logger.info(
@@ -62,20 +66,26 @@ class AgentOrchestrator:
                 f"(confidence: {classification.confidence:.2f})"
             )
 
-            # Handle boundary cases
+            # Handle boundary cases (but NOT if there's conversation history)
             if classification.intent != IntentType.SPECIFIC_SEARCH:
-                boundary_response = self.boundary_handler.handle(
-                    classification=classification,
-                    query=query,
-                    has_image=bool(image_path),
-                )
+                # If there's conversation history, treat as specific search anyway
+                # to allow the agent to use context
+                if conversation_history and len(conversation_history) > 0:
+                    logger.info(f"[{self.session_id}] Has conversation history, treating as specific search")
+                    classification.intent = IntentType.SPECIFIC_SEARCH
+                else:
+                    boundary_response = self.boundary_handler.handle(
+                        classification=classification,
+                        query=query,
+                        has_image=bool(image_path),
+                    )
 
-                return {
-                    "response": boundary_response,
-                    "intent": classification.intent.value,
-                    "flow": "flow_0_boundary",
-                    "error": False,
-                }
+                    return {
+                        "response": boundary_response,
+                        "intent": classification.intent.value,
+                        "flow": "flow_0_boundary",
+                        "error": False,
+                    }
 
             # Flow 1-4: Shopping Agent (ReAct)
             result = self.shopping_agent.chat(query=query, image_path=image_path)
