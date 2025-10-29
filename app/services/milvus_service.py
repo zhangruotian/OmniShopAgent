@@ -323,13 +323,13 @@ class MilvusService:
             formatted_results = []
             if results and len(results) > 0:
                 for hit in results[0]:
-                    formatted_results.append(
-                        {
-                            "id": hit.get("id"),
-                            "text": hit.get("text"),
-                            "distance": hit.get("distance"),
-                        }
-                    )
+                    result = {"id": hit.get("id"), "distance": hit.get("distance")}
+                    # Extract fields from entity
+                    entity = hit.get("entity", {})
+                    for field in output_fields:
+                        if field in entity:
+                            result[field] = entity.get(field)
+                    formatted_results.append(result)
 
             logger.debug(f"Found {len(formatted_results)} similar text embeddings")
             return formatted_results
@@ -388,13 +388,13 @@ class MilvusService:
             formatted_results = []
             if results and len(results) > 0:
                 for hit in results[0]:
-                    formatted_results.append(
-                        {
-                            "id": hit.get("id"),
-                            "image_path": hit.get("image_path"),
-                            "distance": hit.get("distance"),
-                        }
-                    )
+                    result = {"id": hit.get("id"), "distance": hit.get("distance")}
+                    # Extract fields from entity
+                    entity = hit.get("entity", {})
+                    for field in output_fields:
+                        if field in entity:
+                            result[field] = entity.get(field)
+                    formatted_results.append(result)
 
             logger.debug(f"Found {len(formatted_results)} similar image embeddings")
             return formatted_results
