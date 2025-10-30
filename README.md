@@ -10,19 +10,19 @@ OmniShopAgent autonomously decides which tools to call, maintains conversation s
 - Autonomous tool selection and execution
 - Multi-modal search (text + image)
 - Conversational context awareness
-- Real-time visual analysis with GPT-4o-mini Vision
+- Real-time visual analysis 
 
 ## Tech Stack
 
 | Component | Technology |
 |-----------|-----------|
-| **Agent Framework** | LangGraph 0.2.74+ (StateGraph, MemorySaver) |
-| **LLM** | GPT-4o-mini (reasoning, vision, tool calls) |
+| **Agent Framework** | LangGraph |
+| **LLM** | any LLM supported by LangChain |
 | **Text Embedding** | text-embedding-3-small |
-| **Image Embedding** | CLIP ViT-B/32 (via clip-server) |
+| **Image Embedding** | CLIP ViT-B/32 |
 | **Vector Database** | Milvus |
 | **Frontend** | Streamlit |
-| **Dataset** | Kaggle Fashion Products (~44k items) |
+| **Dataset** | Kaggle Fashion Products |
 
 ## Architecture
 
@@ -51,6 +51,10 @@ graph LR
 - `search_products(query)` - Text-based semantic search
 - `search_by_image(image_path)` - Visual similarity search  
 - `analyze_image_style(image_path)` - VLM style analysis
+
+## Demo
+
+📄 **[View Full Demo Documentation (PDF)](./demo.pdf)**
 
 ## Examples
 
@@ -113,10 +117,8 @@ cp .env.example .env
 ### 2. Download Dataset
 Download the [Fashion Product Images Dataset](https://www.kaggle.com/datasets/paramaggarwal/fashion-product-images-dataset) from Kaggle and extract to `./data/`:
 
-```bash
-# Using Kaggle CLI
-kaggle datasets download -d paramaggarwal/fashion-product-images-dataset
-unzip fashion-product-images-dataset.zip -d data/
+```python
+python scripts/download_dataset.py
 ```
 
 Expected structure:
@@ -129,22 +131,15 @@ data/
 
 ### 3. Start Services
 
-**Terminal 1 - Milvus (Vector Database):**
 ```bash
 docker-compose up
-```
-Wait for: `Milvus Proxy started successfully`
-
-**Terminal 2 - CLIP Server (Image Embeddings):**
-```bash
 python -m clip_server
 ```
-Starts at `grpc://0.0.0.0:51000`
 
-### 4. Index Data (One-time, ~10-15 min)
-**Terminal 3:**
+
+### 4. Index Data 
+
 ```bash
-source venv/bin/activate
 python scripts/index_data.py
 ```
 
