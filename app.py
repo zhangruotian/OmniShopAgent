@@ -12,7 +12,7 @@ from typing import Optional
 import streamlit as st
 from PIL import Image, ImageOps
 
-from app.agents.orchestrator import AgentOrchestrator
+from app.agents.shopping_agent import ShoppingAgent
 
 # Configure logging
 logging.basicConfig(
@@ -231,8 +231,8 @@ def initialize_session():
     if "session_id" not in st.session_state:
         st.session_state.session_id = str(uuid.uuid4())
 
-    if "orchestrator" not in st.session_state:
-        st.session_state.orchestrator = AgentOrchestrator(
+    if "shopping_agent" not in st.session_state:
+        st.session_state.shopping_agent = ShoppingAgent(
             session_id=st.session_state.session_id
         )
 
@@ -343,33 +343,49 @@ def extract_products_from_response(response: str) -> list:
 
 
 def display_product_card(product: dict):
-    """Display a product card with image and name only"""
+    """Display a product card with image and name"""
     product_id = product.get("id", "")
     name = product.get("name", "Unknown Product")
+    
+    # Debug: log what we got
+    logger.info(f"Displaying product: ID={product_id}, Name={name}")
 
     # Try to load image from data/images directory
-    image_path = Path(f"data/images/{product_id}.jpg")
-
-    # Create a compact card layout
-    with st.container():
+    if product_id:
+        image_path = Path(f"data/images/{product_id}.jpg")
+        
         if image_path.exists():
             try:
                 img = Image.open(image_path)
-                target_size = (180, 180)
+                # Fixed size for all images
+                target_size = (200, 200)
                 try:
-                    img_processed = ImageOps.fit(img, target_size, method=Image.LANCZOS)
-                except Exception:
-                    img_processed = img.resize(target_size, Image.LANCZOS)
-
-                st.image(img_processed, width=180, caption=name)
-            except Exception:
-                logger.warning(f"Failed to load image {image_path}")
-                st.markdown(f"**📷 {name}**")
+                    # Try new Pillow API
+                    img_processed = ImageOps.fit(
+                        img, target_size, method=Image.Resampling.LANCZOS
+                    )
+                except AttributeError:
+                    # Fallback for older Pillow versions
+                    img_processed = ImageOps.fit(
+                        img, target_size, method=Image.LANCZOS
+                    )
+                
+                # Display image with fixed width
+                st.image(img_processed, use_container_width=False, width=200)
+                st.markdown(f"**{name}**")
                 st.caption(f"ID: {product_id}")
+                return
+            except Exception as e:
+                logger.warning(f"Failed to load image {image_path}: {e}")
         else:
             logger.warning(f"Image not found: {image_path}")
-            st.markdown(f"**📷 {name}**")
-            st.caption(f"ID: {product_id}")
+    
+    # Fallback: no image
+    st.markdown(f"**📷 {name}**")
+    if product_id:
+        st.caption(f"ID: {product_id}")
+    else:
+        st.caption("ID not available")
 
 
 def display_message(message: dict):
@@ -377,7 +393,7 @@ def display_message(message: dict):
     role = message["role"]
     content = message["content"]
     image_path = message.get("image_path")
-    tools_used = message.get("tools_used", [])
+    tool_calls = message.get("tool_calls", [])
 
     if role == "user":
         st.markdown('<div class="message user-message">', unsafe_allow_html=True)
@@ -393,24 +409,21 @@ def display_message(message: dict):
         st.markdown("</div>", unsafe_allow_html=True)
 
     else:  # assistant
-        # Display tools used (debug info)
-        if tools_used:
-            tools_badges = " ".join(
-                [
-                    f'<span style="background: #e3f2fd; color: #1976d2; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; margin-right: 0.25rem;">🔧 {tool}</span>'
-                    for tool in tools_used
-                ]
-            )
-            st.markdown(
-                f'<div style="margin-bottom: 0.5rem;">{tools_badges}</div>',
-                unsafe_allow_html=True,
-            )
-
+        # Display tool calls horizontally - only tool names
+        if tool_calls:
+            tool_names = [tc['name'] for tc in tool_calls]
+            st.caption(" → ".join(tool_names))
+            st.markdown("")
+        
         # Extract and display products if any
         products = extract_products_from_response(content)
+        
+        # Debug logging
+        logger.info(f"Extracted {len(products)} products from response")
+        for p in products:
+            logger.info(f"Product: {p}")
 
         if products:
-
             def parse_score(product: dict) -> float:
                 score = product.get("score")
                 if score is None:
@@ -420,7 +433,10 @@ def display_message(message: dict):
                 except (TypeError, ValueError):
                     return 0.0
 
+            # Sort by score and limit to 3
             products = sorted(products, key=parse_score, reverse=True)[:3]
+            
+            logger.info(f"Displaying top {len(products)} products")
 
             # Display the text response first (without product details)
             text_lines = []
@@ -446,16 +462,14 @@ def display_message(message: dict):
             if intro_text:
                 st.markdown(intro_text)
 
-            # Display product cards in grid (no separator)
+            # Display product cards in grid
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # Create 3-column grid for products
-            cols_per_row = 3
-            for i in range(0, len(products), cols_per_row):
-                cols = st.columns(cols_per_row)
-                for j, product in enumerate(products[i : i + cols_per_row]):
-                    with cols[j]:
-                        display_product_card(product)
+            # Create exactly 3 columns with equal width
+            cols = st.columns(3)
+            for j, product in enumerate(products[:3]):  # Ensure max 3
+                with cols[j]:
+                    display_product_card(product)
         else:
             # No products found, display full content
             st.markdown(content)
@@ -498,7 +512,7 @@ def display_welcome():
             <div class="feature-card">
                 <div class="feature-icon">🔍</div>
                 <div class="feature-title">Visual Analysis</div>
-                <div>AI analyzes style</div>
+                <div>AI analyzes prodcut style</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -539,8 +553,8 @@ def main():
         st.markdown("### ⚙️ Settings")
 
         if st.button("🗑️ Clear Chat", use_container_width=True):
-            if "orchestrator" in st.session_state:
-                st.session_state.orchestrator.shopping_agent.chat_history.clear()
+            if "shopping_agent" in st.session_state:
+                st.session_state.shopping_agent.clear_history()
             st.session_state.messages = []
             st.session_state.uploaded_image = None
             st.rerun()
@@ -607,8 +621,8 @@ def main():
 
     # Process user input
     if user_query:
-        # Ensure orchestrator is initialized
-        if "orchestrator" not in st.session_state:
+        # Ensure shopping agent is initialized
+        if "shopping_agent" not in st.session_state:
             st.error("Session not initialized. Please refresh the page.")
             st.stop()
 
@@ -651,72 +665,37 @@ def main():
         with messages_container:
             display_message(st.session_state.messages[-1])
 
-        # Process with orchestrator
-        # Create a placeholder for thinking steps
-        thinking_container = st.empty()
-
+        # Process with shopping agent
         try:
-            # Show dynamic thinking steps
-            agent = st.session_state.orchestrator.shopping_agent
-            # Save orchestrator to local variable (can't access session_state in thread)
-            orchestrator = st.session_state.orchestrator
+            shopping_agent = st.session_state.shopping_agent
+            
+            # Handle greetings
+            query_lower = user_query.lower().strip()
+            if query_lower in ["hi", "hello", "hey"]:
+                response = """Hello! 👋 I'm your fashion shopping assistant.
 
-            # Show initial thinking message
-            with thinking_container.container():
-                st.markdown("💭 **Thinking...**")
+I can help you:
+- Search for products by description
+- Find items similar to images you upload
+- Analyze product styles
 
-            # Process in background while monitoring steps
-            import threading
-            import time
-
-            result = [None]
-            error = [None]
-
-            def process_query():
-                try:
-                    result[0] = orchestrator.process_query(
-                        query=user_query,
-                        image_path=image_path,
-                    )
-                except Exception as e:
-                    error[0] = e
-
-            # Start processing thread
-            thread = threading.Thread(target=process_query)
-            thread.start()
-
-            # Monitor and display steps
-            last_step = ""
-            while thread.is_alive():
-                current_step = getattr(agent, "current_step", "")
-                if current_step and current_step != last_step:
-                    with thinking_container.container():
-                        st.markdown("💭 **Thinking...**")
-                        st.markdown(f"_{current_step}_")
-                    last_step = current_step
-                time.sleep(0.1)
-
-            thread.join()
-
-            # Clear thinking container
-            thinking_container.empty()
-
-            # Check for errors
-            if error[0]:
-                raise error[0]
-
-            if result[0] is None:
-                raise Exception("No result returned from query processing")
-
-            response = result[0]["response"]
-            tools_used = result[0].get("tools_used", [])
+What are you looking for today?"""
+                tool_calls = []
+            else:
+                # Process with agent
+                result = shopping_agent.chat(
+                    query=user_query,
+                    image_path=image_path,
+                )
+                response = result["response"]
+                tool_calls = result.get("tool_calls", [])
 
             # Add assistant message
             st.session_state.messages.append(
                 {
                     "role": "assistant",
                     "content": response,
-                    "tools_used": tools_used,
+                    "tool_calls": tool_calls,
                 }
             )
 

@@ -3,15 +3,15 @@ LangChain Tools for Product Search and Discovery
 """
 
 from app.tools.search_tools import (
-    FilterProductsTool,
-    ImageSearchTool,
-    ProductSearchTool,
-    VLMReasoningTool,
+    analyze_image_style,
+    get_all_tools,
+    search_by_image,
+    search_products,
 )
 
 __all__ = [
-    "ProductSearchTool",
-    "FilterProductsTool",
-    "ImageSearchTool",
-    "VLMReasoningTool",
+    "search_products",
+    "search_by_image",
+    "analyze_image_style",
+    "get_all_tools",
 ]
