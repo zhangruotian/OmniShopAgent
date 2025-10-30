@@ -2,6 +2,10 @@
 
 An autonomous multi-modal fashion shopping agent powered by **LangGraph** and **ReAct pattern**.
 
+## Demo
+
+📄 **[demo.pdf](./demo.pdf)**
+
 ## Overview
 
 OmniShopAgent autonomously decides which tools to call, maintains conversation state, and determines when to respond. Built with **LangGraph**, it uses agentic patterns for intelligent product discovery.
@@ -52,9 +56,7 @@ graph LR
 - `search_by_image(image_path)` - Visual similarity search  
 - `analyze_image_style(image_path)` - VLM style analysis
 
-## Demo
 
-📄 **[View Full Demo Documentation (PDF)](./demo.pdf)**
 
 ## Examples
 
