@@ -61,7 +61,7 @@ def download_dataset():
         # Extract zip file
         zip_path = raw_data_path / "fashion-product-images-dataset.zip"
         if zip_path.exists():
-            print("\n📦 Extracting files...")
+            print("Extracting files...")
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(raw_data_path)
 
